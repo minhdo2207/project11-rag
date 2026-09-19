@@ -1,0 +1,11 @@
+# Cốt lõi skeleton (P1) không phụ thuộc thư viện ngoài.
+pytest>=8.0
+
+# Sẽ dùng ở các giai đoạn sau (P3/P4/P5) — bỏ comment khi cần:
+# numpy
+# sentence-transformers
+# rank-bm25
+# chromadb
+# ollama
+# scikit-learn
+# matplotlib
