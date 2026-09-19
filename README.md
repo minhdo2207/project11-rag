@@ -50,4 +50,3 @@ python -m pytest tests/ -v
 ```
 
 ## Tài liệu
-Xem [docs/BAO-CAO-RAG-3-PAPERS.md](docs/BAO-CAO-RAG-3-PAPERS.md) — tổng hợp 3 bài báo và hướng áp dụng.
