@@ -1,11 +1,15 @@
-# Cốt lõi skeleton (P1) không phụ thuộc thư viện ngoài.
+# Cot loi (chay duoc backend memory/file + test)
+pyyaml>=6.0
 pytest>=8.0
 
-# Sẽ dùng ở các giai đoạn sau (P3/P4/P5) — bỏ comment khi cần:
-# numpy
-# sentence-transformers
-# rank-bm25
-# chromadb
-# ollama
-# scikit-learn
-# matplotlib
+# Backend Qdrant (tuy chon) - bo comment neu dung:
+# qdrant-client>=1.7
+
+# Cac giai doan sau (P3/P4/P5) - bat khi can:
+# sentence-transformers   # embedding
+# rank-bm25               # hybrid retrieval
+# astchunk                # chunking theo AST (cAST)
+# ollama                  # goi LLM local
+# lettucedetect           # kiem chung hallucination
+# scikit-learn            # metrics
+# matplotlib              # bieu do
