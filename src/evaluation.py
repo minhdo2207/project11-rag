@@ -1,30 +1,24 @@
-"""P5 — Chỉ số đánh giá.
+"""P5 — Cac chi so danh gia.
 
-Cung cấp sẵn accuracy và balanced accuracy (quan trọng khi dữ liệu mất cân bằng).
-P5 sẽ mở rộng thêm precision/recall/F1, confusion matrix và biểu đồ.
+STUB: chi dinh nghia chu ky ham + mo ta viec can lam. P5 se hien thuc.
+
+Can co (toi thieu):
+  - accuracy(y_true, y_pred)
+  - balanced_accuracy(y_true, y_pred)   # quan trong vi du lieu lech (lanh >> doc)
+  - precision / recall / f1 cho lop "malicious"
+  - false_negative_rate               # bo sot ma doc - nguy hiem nhat trong bao mat
+  - confusion_matrix
+Mo rong (theo huong nghien cuu):
+  - context-sufficiency: tach loi retrieval khoi loi generation
+  - evidence-localization: model co chi dung dong code doc khong (chong hallucination)
 """
 
 from __future__ import annotations
 
 
 def accuracy(y_true: list[str], y_pred: list[str]) -> float:
-    """Tỉ lệ dự đoán đúng tổng thể."""
-    if not y_true:
-        return 0.0
-    correct = sum(1 for t, p in zip(y_true, y_pred, strict=False) if t == p)
-    return correct / len(y_true)
+    raise NotImplementedError("P5 hien thuc")
 
 
 def balanced_accuracy(y_true: list[str], y_pred: list[str]) -> float:
-    """Trung bình recall trên từng lớp — công bằng với dữ liệu lệch."""
-    labels = set(y_true)
-    if not labels:
-        return 0.0
-    recalls = []
-    for label in labels:
-        pos = [i for i, t in enumerate(y_true) if t == label]
-        if not pos:
-            continue
-        hit = sum(1 for i in pos if y_pred[i] == label)
-        recalls.append(hit / len(pos))
-    return sum(recalls) / len(recalls) if recalls else 0.0
+    raise NotImplementedError("P5 hien thuc")
