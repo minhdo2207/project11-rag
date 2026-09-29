@@ -109,7 +109,3 @@ vừa là số liệu cho báo cáo.
 | **P5** | `evaluation.py`, `notebooks/` | metrics, chẩn đoán, demo |
 
 Quy tắc làm việc chung: xem [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Tài liệu
-
-- [docs/BAO-CAO-RAG-3-PAPERS.md](docs/BAO-CAO-RAG-3-PAPERS.md) — tổng hợp tài liệu tham khảo.
