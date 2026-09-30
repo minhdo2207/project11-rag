@@ -52,20 +52,32 @@ def ingest_packages_json(repo: KnowledgeRepository, json_path: str | Path, label
     return count
 
 
-def ingest_ghsa(repo: KnowledgeRepository, ghsa_dir: str | Path) -> int:
-    ghsa_dir = Path(ghsa_dir)
+def ingest_ghsa(repo: KnowledgeRepository, ghsa_path: str | Path = "data/ghsa_all.json") -> int:
+    """Nạp GitHub Security Advisories từ file merged ghsa_all.json."""
+    ghsa_path = Path(ghsa_path)
+    if not ghsa_path.exists():
+        print(f"[ingest] Không tìm thấy {ghsa_path}")
+        return 0
+
+    with open(ghsa_path, encoding="utf-8") as f:
+        advisories = json.load(f)
+
     count = 0
-    for path in sorted(ghsa_dir.glob("**/*.json")):
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-        text = "\n\n".join(filter(None, [data.get("summary", ""), data.get("details", "")]))
+    for adv in advisories:
+        text = "\n\n".join(filter(None, [
+            adv.get("summary", ""),
+            adv.get("details", ""),
+        ]))
+        if not text:
+            continue
         doc = Document(
-            doc_id=f"ghsa::{data.get('id', path.stem)}",
+            doc_id=f"ghsa::{adv.get('id', hashlib.md5(text.encode()).hexdigest()[:8])}",
             text=text,
-            metadata={"source": "ghsa", "type": "GHSA", "ghsa_id": data.get("id", "")},
+            metadata={"source": "ghsa", "type": "GHSA", "ghsa_id": adv.get("id", "")},
         )
         repo.add(doc)
         count += 1
+
     return count
 
 
@@ -76,7 +88,7 @@ def ingest_all(repo: KnowledgeRepository, data_dir: str | Path = "data") -> dict
     n_mal += ingest_packages_json(repo, data_dir / "malicious" / "test_malicious_packages_final.json", "malicious")
     n_ben = ingest_packages_json(repo, data_dir / "benign" / "train_benign_packages_final.json", "benign")
     n_ben += ingest_packages_json(repo, data_dir / "benign" / "test_benign_packages_final.json", "benign")
-    n_ghsa = ingest_ghsa(repo, data_dir / "ghsa")
+    n_ghsa = ingest_ghsa(repo, data_dir / "ghsa_all.json")
     stats = {"yara": n_yara, "malicious_code": n_mal, "benign_code": n_ben, "ghsa": n_ghsa, "total": n_yara + n_mal + n_ben + n_ghsa}
     print(f"[ingest] Đã nạp: {stats}")
     return stats
