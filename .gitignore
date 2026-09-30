@@ -1,0 +1,25 @@
+# --- dữ liệu: không bao giờ commit ---
+# CRAG ~14 GB, bộ PyPI của DataDog chứa mã độc thật
+data/**
+!data/.gitkeep
+
+# ⚠️ mẫu mã độc — tuyệt đối không commit
+data/malicious/
+*.zip
+*.tar.gz
+*.tar.bz2
+*.tar.bz2.part*
+
+# --- sinh ra khi chạy, không commit ---
+results/
+logs/
+refs/
+
+# --- Python ---
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.venv/
+.env

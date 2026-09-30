@@ -1,0 +1,17 @@
+# --- truy hồi: chia đoạn, nhúng, xếp hạng lại ---
+sentence-transformers>=3.0   # bge-m3 (nhúng) + bge-reranker-v2-m3 (cross-encoder)
+torch>=2.2                   # backend cho hai model trên
+transformers>=4.40           # tokenizer Llama 3 — đếm token đúng ngân sách 4.000
+
+# --- nạp dữ liệu ---
+beautifulsoup4>=4.12         # tách chữ khỏi HTML của trang web trong CRAG
+
+# --- sinh ---
+ollama>=0.3                  # client cho model chạy cục bộ (sinh và chấm)
+
+# --- kiểm thử & chất lượng mã ---
+pytest>=8.0
+ruff>=0.5
+
+# BM25 tự cài trong src/crag/retrieve.py, không cần rank-bm25.
+# Không dùng faiss/pandas/numpy/ragas/datasets — mọi phép tính đều bằng thư viện chuẩn.
