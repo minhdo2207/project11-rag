@@ -12,3 +12,13 @@ data/kb/
 .vscode/
 .idea/
 data/
+
+# Sinh ra khi chay bac thang CRAG (src/crag), khong commit
+results/
+logs/
+refs/
+.env
+*.zip
+*.tar.gz
+*.tar.bz2
+*.tar.bz2.part*
