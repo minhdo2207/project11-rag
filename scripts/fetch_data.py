@@ -100,7 +100,7 @@ def fetch_ghsa():
         print(f"  [✓] Đã có: {out_path.name}")
         return
 
-    if GITHUB_TOKEN in ("", "....."):
+    if GITHUB_TOKEN == "ghp_...":
         print("  [!] Chưa điền GITHUB_TOKEN — bỏ qua GHSA")
         return
 
