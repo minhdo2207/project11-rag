@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 from pathlib import Path
 
 from src.models import Document
@@ -64,10 +64,15 @@ def ingest_ghsa(repo: KnowledgeRepository, ghsa_path: str | Path = "data/ghsa_al
 
     count = 0
     for adv in advisories:
-        text = "\n\n".join(filter(None, [
-            adv.get("summary", ""),
-            adv.get("details", ""),
-        ]))
+        text = "\n\n".join(
+            filter(
+                None,
+                [
+                    adv.get("summary", ""),
+                    adv.get("details", ""),
+                ],
+            )
+        )
         if not text:
             continue
         doc = Document(
@@ -84,11 +89,25 @@ def ingest_ghsa(repo: KnowledgeRepository, ghsa_path: str | Path = "data/ghsa_al
 def ingest_all(repo: KnowledgeRepository, data_dir: str | Path = "data") -> dict:
     data_dir = Path(data_dir)
     n_yara = ingest_yara(repo, data_dir / "yara")
-    n_mal = ingest_packages_json(repo, data_dir / "malicious" / "train_malicious_packages_final.json", "malicious")
-    n_mal += ingest_packages_json(repo, data_dir / "malicious" / "test_malicious_packages_final.json", "malicious")
-    n_ben = ingest_packages_json(repo, data_dir / "benign" / "train_benign_packages_final.json", "benign")
-    n_ben += ingest_packages_json(repo, data_dir / "benign" / "test_benign_packages_final.json", "benign")
+    n_mal = ingest_packages_json(
+        repo, data_dir / "malicious" / "train_malicious_packages_final.json", "malicious"
+    )
+    n_mal += ingest_packages_json(
+        repo, data_dir / "malicious" / "test_malicious_packages_final.json", "malicious"
+    )
+    n_ben = ingest_packages_json(
+        repo, data_dir / "benign" / "train_benign_packages_final.json", "benign"
+    )
+    n_ben += ingest_packages_json(
+        repo, data_dir / "benign" / "test_benign_packages_final.json", "benign"
+    )
     n_ghsa = ingest_ghsa(repo, data_dir / "ghsa_all.json")
-    stats = {"yara": n_yara, "malicious_code": n_mal, "benign_code": n_ben, "ghsa": n_ghsa, "total": n_yara + n_mal + n_ben + n_ghsa}
+    stats = {
+        "yara": n_yara,
+        "malicious_code": n_mal,
+        "benign_code": n_ben,
+        "ghsa": n_ghsa,
+        "total": n_yara + n_mal + n_ben + n_ghsa,
+    }
     print(f"[ingest] Đã nạp: {stats}")
     return stats

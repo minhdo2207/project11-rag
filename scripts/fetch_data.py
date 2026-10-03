@@ -7,13 +7,14 @@ Yêu cầu: pip install requests
 
 import json
 import time
-import requests
 from pathlib import Path
+
+import requests
 
 # ============================================================
 # CẤU HÌNH — chỉ cần sửa GITHUB_TOKEN
 # ============================================================
-GITHUB_TOKEN = "....."  
+GITHUB_TOKEN = "....."
 DATA_DIR = Path("data")
 
 # URL gốc của repo paper
@@ -145,12 +146,14 @@ if __name__ == "__main__":
 
     DATA_DIR.mkdir(exist_ok=True)
 
-    fetch_malicious()   # KB MaliciousCode
-    fetch_benign()      # KB BenignCode
-    check_yara()        # KB YARA
-    fetch_ghsa()        # KB GHSA
+    fetch_malicious()  # KB MaliciousCode
+    fetch_benign()  # KB BenignCode
+    check_yara()  # KB YARA
+    fetch_ghsa()  # KB GHSA
 
     print("\n[✓] Hoàn tất! Chạy ingest để nạp vào Knowledge Base:")
-    print('    python -c "from src.repository import KnowledgeRepository; '
-          'from src.ingest import ingest_all; '
-          'repo = KnowledgeRepository(); print(ingest_all(repo))"')
+    print(
+        '    python -c "from src.repository import KnowledgeRepository; '
+        "from src.ingest import ingest_all; "
+        'repo = KnowledgeRepository(); print(ingest_all(repo))"'
+    )
