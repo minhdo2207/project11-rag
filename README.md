@@ -1,111 +1,126 @@
 # Project 11 — Retrieval-Augmented Generation (RAG): Concepts & Applications
 
-Dùng RAG để **phát hiện mã độc trong các gói PyPI**, dựa trên bài tham chiếu
-*"Detecting Malicious Source Code in PyPI Packages with LLMs: Does RAG Come in Handy?"* (EASE 2025).
+## Overview
 
-Bài gốc kết luận RAG cho kết quả trung bình, thua few-shot (97%). Nhóm mình đi theo hướng:
-**(1)** chẩn đoán vì sao RAG kém, **(2)** dựng lại RAG bằng kỹ thuật 2026 (cAST, hybrid, rerank),
-**(3)** thêm cổng kiểm chứng để giảm bịa bằng chứng (task "RAG chống hallucination").
+Detecting **malicious source code in PyPI packages** using Retrieval-Augmented Generation (RAG) and LLMs.
+This work builds on *"Detecting Malicious Source Code in PyPI Packages with LLMs: Does RAG Come in Handy?"* (EASE 2025).
 
-## Cài & chạy
+### Why This Matters
+
+The reference paper found that RAG achieved only **middling results** (~79% accuracy), underperforming few-shot prompting (97%).
+Our approach investigates and improves RAG for this task through:
+
+1. **Diagnosis:** Why does RAG underperform? Retrieval quality? LLM hallucination? Context mismatch?
+2. **Modern RAG techniques:** Hybrid retrieval (BM25 + dense vectors, RRF ranking), cross-encoder reranking, 
+   cAST-based code chunking for better semantic boundaries
+3. **Hallucination mitigation:** Grounding gate (evidence-based verification) to reject LLM answers 
+   unsupported by retrieved context
+
+## Installation & Running Tests
 
 ```bash
 pip install -r requirements.txt
-make test        # chay unit test
+make test        # run unit tests
 ```
 
-Yêu cầu Python 3.11+. Backend `memory`/`file` không cần cài gì thêm ngoài `pyyaml`.
-Backend `qdrant` là tuỳ chọn (`pip install qdrant-client`).
+Requires Python 3.11+. The `memory` and `file` backends only need `pyyaml`.
+The `qdrant` backend is optional (`pip install qdrant-client`).
 
-## Yêu cầu non-functional (đề bài)
+## Architecture & Design Principles
 
-Dữ liệu (knowledge base + embeddings) phải quản lý được **cả trong RAM lẫn qua file**, và
-đổi giữa hai lớp lưu trữ chỉ được sửa **rất ít code**. Bọn mình giải bằng interface
-`KnowledgeRepository` + một factory đọc từ `config.yaml`:
+### Storage Abstraction
+
+A core requirement: data (knowledge base + embeddings) must be manageable **both in-memory and persisted to disk**, 
+with minimal code changes to swap backends. We achieve this via:
+
+- **`KnowledgeRepository` interface:** Common contract for all storage backends
+- **Factory pattern:** Single-line configuration swap
 
 ```python
 from src.config import load_config
 from src.repository.factory import build_repository
 
-repo = build_repository(load_config())   # backend lay tu config.yaml, doi 1 dong la xong
+repo = build_repository(load_config())   # backend from config.yaml, one change to swap
 ```
 
-Đổi `storage.backend` trong `config.yaml` giữa `memory | file | qdrant` — business logic
-(retriever, detector) không phải sửa gì.
+Change `storage.backend` in `config.yaml` to `memory | file | qdrant`. Business logic 
+(retriever, detector) remains **storage-agnostic** — a key separation of concerns.
 
-## Cấu trúc & từng phần implement ra sao
+## Codebase Structure
 
 ```
 src/
-  config.py            # doc config.yaml
-  models.py            # dataclass Document dung chung
-  repository/          # lop luu tru (memory / file / qdrant) - phan cua P1
-  embedding.py         # nhung text/code -> vector (P3)
-  retriever.py         # truy xuat bang chung (P3)
-  llm_client.py        # goi LLM qua Ollama (P4)
-  detector.py          # phan quyet doc/lanh (P4)
-  evaluation.py        # metrics (P5)
+  config.py            # Load and parse config.yaml
+  models.py            # Shared Document dataclass
+  repository/          # Storage abstraction (memory / file / qdrant)
+  embedding.py         # Text/code → vectors
+  retriever.py         # Hybrid retrieval + reranking
+  llm_client.py        # LLM inference (Ollama)
+  detector.py          # Classification (malicious / benign)
+  evaluation.py        # Metrics & diagnostics
 ```
 
-### `config.py` — cấu hình tập trung
-Đọc `config.yaml` thành object `Config`, cho lấy key kiểu `cfg.get("pipeline.mode")`.
-Mọi tham số (backend, model, bật/tắt từng tầng RAG) nằm ở đây → thí nghiệm reproducible,
-đổi cấu hình không đụng code. **Đã implement + có test.**
+### Key Components
 
-### `models.py` — `Document`
-Đơn vị tri thức: `doc_id`, `text`, `embedding`, `metadata`, `label`. Có `preview()` để in log
-gọn và `is_labeled`. Mọi module trao đổi qua kiểu này để interface ổn định. **Đã implement.**
+**`config.py`** — Centralized configuration
+- Loads `config.yaml` into a nested-key object: `cfg.get("pipeline.mode")`
+- All parameters (backend, model choice, feature toggles) in one place
+- Reproducible experiments, no code changes to adjust settings
 
-### `repository/` — lớp lưu trữ (phần chính của P1)
-- `base.py`: interface trừu tượng `KnowledgeRepository` (`add / get / all / search / count / clear`).
-- `in_memory.py`: giữ trong `dict`, tìm bằng cosine. Nhanh, mất khi tắt tiến trình.
-- `file_based.py`: lưu ra JSON, còn dữ liệu sau khi tắt.
-- `qdrant_repo.py`: dùng Qdrant, `:memory:` và local-file **cùng một API**; tuỳ chọn.
-- `factory.py`: `build_repository(cfg)` dựng đúng backend từ config.
-- Cả `in_memory` và `file` share `_similarity.py` nên **cho kết quả `search` giống hệt nhau**
-  — có test chứng minh điều đó (`tests/test_repository.py` chạy song song 2 backend).
+**`models.py`** — `Document` dataclass
+- Common knowledge unit: `doc_id`, `text`, `embedding`, `metadata`, `label`
+- `is_labeled` and `preview()` helpers for introspection
+- Interface stability across modules
 
-**Đã implement + có test.**
+**`repository/`** — Storage layer (in-memory, file-based, Qdrant)
+- `base.py`: Abstract `KnowledgeRepository` interface (`add / get / all / search / count / clear`)
+- `in_memory.py`: Fast, in-process, ephemeral (dict + cosine similarity)
+- `file_based.py`: Persistent JSON storage
+- `qdrant_repo.py`: Vector database option (`:memory:` or local disk, same API)
+- `_similarity.py`: Shared cosine implementation → identical retrieval results across backends
+- Unit tests verify **both backends produce identical outputs** (`test_repository.py`)
 
-### `embedding.py` — (P3, đang là interface)
-Interface `Embedder.embed(text) -> vector`. Sẽ hiện thực bằng `bge-m3` hoặc `Qwen3-Embedding`
-qua sentence-transformers. Với code thì cân nhắc model embedding chuyên code.
+**`embedding.py`** — Vectorization
+- Interface: `Embedder.embed(text) -> vector`
+- Candidates: `bge-m3`, `Qwen3-Embedding`, or code-specialized embedders
 
-### `retriever.py` — (P3, đang là interface)
-Interface `Retriever.retrieve(query, top_k)`. Kế hoạch hiện thực theo 3 mức, bật dần qua config:
-1. `vector`: gọi thẳng `repository.search`.
-2. `hybrid`: BM25 (bắt token chính xác như `eval`, `b64decode`) + vector, hợp nhất bằng RRF.
-3. thêm rerank bằng cross-encoder + ngưỡng từ chối (dưới ngưỡng trả 0 chunk).
+**`retriever.py`** — Retrieval pipeline
+- Interface: `Retriever.retrieve(query, top_k) -> list[Document]`
+- Three progressive modes (configurable):
+  1. **Dense-only:** Vector search via repository
+  2. **Hybrid:** BM25 (exact tokens: `eval`, `b64decode`) + dense vectors, combined with RRF
+  3. **Reranked:** Cross-encoder reranking + confidence threshold (reject below threshold)
 
-### `llm_client.py` — (P4, đang là interface)
-Interface `LLMClient.generate(prompt)`. Hiện thực gọi Ollama (`qwen2.5`, đổi model qua config).
-**Lưu ý:** đặt `max_tokens` đủ rộng, tránh cắt cụt câu trả lời (bài học từ seminar CRAG —
-câu bị cắt dễ bị chấm nhầm là "bịa").
+**`llm_client.py`** — LLM inference
+- Interface: `LLMClient.generate(prompt) -> str`
+- Backend: Ollama (`qwen2.5` or configurable)
+- **Critical:** Set `max_tokens` generously to avoid truncation (truncated responses confound evaluation)
 
-### `detector.py` — (P4)
-`MaliciousCodeDetector.detect(code) -> Verdict`. Có cờ `use_rag` để so sánh no-RAG vs RAG.
-Business logic chỉ phụ thuộc `Retriever` + `LLMClient` (interface), **không biết** dữ liệu nằm
-ở RAM hay file — đó là điểm mấu chốt của thiết kế.
+**`detector.py`** — Malicious code detection
+- `MaliciousCodeDetector.detect(code) -> Verdict` (malicious / benign + confidence)
+- Flag `use_rag` to toggle RAG vs. zero-shot baseline
+- Business logic **storage-agnostic**: depends only on `Retriever` + `LLMClient` interfaces
 
-### `evaluation.py` — (P5)
-`accuracy` và `balanced_accuracy` (quan trọng khi dữ liệu lệch: gói lành nhiều hơn gói độc).
-Sẽ mở rộng thêm precision/recall/F1, false-negative rate, và chẩn đoán context-sufficiency
-(tách lỗi retrieval khỏi lỗi generation). **Cơ bản đã implement + có test.**
+**`evaluation.py`** — Metrics & diagnostics
+- `accuracy`, `balanced_accuracy` (crucial for class imbalance: benign >> malicious)
+- Extensible: precision, recall, F1, false-negative rate
+- Advanced: **context-sufficiency analysis** (isolate retrieval vs. generation errors) and 
+  **evidence localization** (does LLM cite correct lines?)
 
-## Bật/tắt từng tầng (ablation)
+### Ablation Studies
 
-Các cờ trong `config.yaml > pipeline` (`chunking`, `retrieval`, `rerank`, `mode`, `verify`)
-cho phép bật dần từng tầng và đo đóng góp riêng của mỗi tầng — vừa để phát triển an toàn,
-vừa là số liệu cho báo cáo.
+Feature flags in `config.yaml` (`pipeline.chunking`, `pipeline.retrieval`, `pipeline.rerank`, etc.)
+enable progressive evaluation of each component's contribution—both for safe development and 
+for reporting in the final paper.
 
-## Phân công nhóm (5 người)
+## Team Roles & Contributions
 
-| Vai | Sở hữu | Nội dung |
-|---|---|---|
-| **P1** | `repository/`, `config.py`, `models.py`, CI | interface, persistence, integration |
-| **P2** | `data/`, ingest | dataset gói lành/độc, YARA, GHSA |
-| **P3** | `embedding.py`, `retriever.py` | hybrid + rerank + cAST |
-| **P4** | `llm_client.py`, `detector.py` | Ollama, no-RAG/RAG/few-shot |
-| **P5** | `evaluation.py`, `notebooks/` | metrics, chẩn đoán, demo |
+| Role | Owns | Responsibilities |
+|------|------|------------------|
+| **P1 (Architecture & Persistence)** | `repository/`, `config.py`, `models.py` | Storage abstraction, configuration, integration |
+| **P2 (Data & Ingestion)** | `src/ingest.py`, `scripts/fetch_data.py` | PyPI packages (benign & malicious), YARA rules, GHSA advisories |
+| **P3 (Embedding & Retrieval)** | `embedding.py`, `retriever.py` | Dense embeddings, hybrid retrieval, reranking, cAST chunking |
+| **P4 (LLM & Detection)** | `llm_client.py`, `detector.py` | Ollama integration, classification logic, RAG vs. zero-shot |
+| **P5 (Evaluation & Experiments)** | `evaluation.py`, `notebooks/` | Metrics, error analysis, ablation studies, visualization |
 
-Quy tắc làm việc chung: xem [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
