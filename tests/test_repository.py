@@ -63,7 +63,38 @@ def test_file_backend_persists(tmp_path) -> None:
     first = FileKnowledgeRepository(path=path)
     for doc in _sample_docs():
         first.add(doc)
-    # Mở lại từ đĩa -> dữ liệu vẫn còn.
+    # Reopening from disk → data persists.
     second = FileKnowledgeRepository(path=path)
     assert second.count() == 3
     assert second.get("d3").label == "malicious"
+
+
+def test_backends_equivalence(tmp_path) -> None:
+    """Verify in-memory and file backends produce identical results.
+
+    This is the crux of the storage abstraction: business logic must not
+    change behavior when swapping backends. Both backends share the same
+    cosine similarity implementation for this guarantee.
+    """
+    docs = _sample_docs()
+
+    mem_repo = InMemoryKnowledgeRepository()
+    file_repo = FileKnowledgeRepository(path=str(tmp_path / "kb"))
+
+    for doc in docs:
+        mem_repo.add(doc)
+        file_repo.add(doc)
+
+    assert mem_repo.count() == file_repo.count()
+
+    for doc_id in ["d1", "d2", "d3"]:
+        mem_doc = mem_repo.get(doc_id)
+        file_doc = file_repo.get(doc_id)
+        assert mem_doc.text == file_doc.text
+        assert mem_doc.label == file_doc.label
+
+    query_vec = [0.95, 0.05, 0.0]
+    mem_results = mem_repo.search(query_vec, top_k=2)
+    file_results = file_repo.search(query_vec, top_k=2)
+
+    assert [d.doc_id for d in mem_results] == [d.doc_id for d in file_results]
