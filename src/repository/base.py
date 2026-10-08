@@ -1,9 +1,12 @@
-"""Interface trừu tượng cho lớp lưu trữ knowledge base.
+"""Abstract interface for knowledge base storage.
 
-Đây là điểm mấu chốt đáp ứng yêu cầu non-functional của đề: business logic chỉ
-phụ thuộc vào ``KnowledgeRepository`` (trừu tượng), không biết dữ liệu nằm trong
-RAM hay trên file. Nhờ vậy đổi backend chỉ cần thay lớp khởi tạo, các module
-khác giữ nguyên (dependency inversion).
+This is the core of our storage abstraction strategy: business logic
+(retriever, detector, evaluator) depends ONLY on this abstract interface,
+never on concrete backends.
+
+Benefit: Swapping backends (memory ↔ file ↔ Qdrant) requires only changing
+the factory, not touching retriever/detector logic. This is **dependency inversion**
+in action and fulfills the non-functional requirement.
 """
 
 from __future__ import annotations
@@ -14,28 +17,60 @@ from ..models import Document
 
 
 class KnowledgeRepository(ABC):
-    """Hợp đồng chung cho mọi cách lưu trữ tri thức (memory hoặc file)."""
+    """Abstract interface for storing and retrieving knowledge documents.
+
+    Implementations:
+      - InMemoryKnowledgeRepository: Fast, ephemeral (in-process dict)
+      - FileKnowledgeRepository: Persistent (JSON on disk)
+      - QdrantKnowledgeRepository: Vector database (in-memory or persistent)
+
+    All methods must produce **identical behavior** across backends.
+    Shared implementation (e.g., _similarity.py) ensures this invariant.
+    """
 
     @abstractmethod
     def add(self, document: Document) -> None:
-        """Thêm (hoặc ghi đè nếu trùng ``doc_id``) một tài liệu."""
+        """Add or overwrite a document by doc_id.
+
+        Args:
+            document: Document to store.
+        """
 
     @abstractmethod
     def get(self, doc_id: str) -> Document | None:
-        """Lấy tài liệu theo id, trả về None nếu không tồn tại."""
+        """Retrieve a document by id.
+
+        Args:
+            doc_id: Unique document identifier.
+
+        Returns:
+            Document if found, None otherwise.
+        """
 
     @abstractmethod
     def all(self) -> list[Document]:
-        """Trả về toàn bộ tài liệu hiện có."""
+        """Retrieve all stored documents.
+
+        Returns:
+            List of all documents (order unspecified).
+        """
 
     @abstractmethod
     def search(self, query_embedding: list[float], top_k: int = 5) -> list[Document]:
-        """Trả về ``top_k`` tài liệu gần nhất theo độ tương đồng cosine."""
+        """Search documents by cosine similarity to query embedding.
+
+        Args:
+            query_embedding: Dense vector (must match embedding dimension).
+            top_k: Number of results to return.
+
+        Returns:
+            Ranked list of top_k most similar documents.
+        """
 
     @abstractmethod
     def count(self) -> int:
-        """Số tài liệu đang lưu."""
+        """Return total number of stored documents."""
 
     @abstractmethod
     def clear(self) -> None:
-        """Xoá toàn bộ tài liệu."""
+        """Delete all stored documents."""
