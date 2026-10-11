@@ -91,7 +91,6 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> Config:
     raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     if not isinstance(raw, dict):
         raise ValueError(
-            "Config must be a top-level mapping (key: value). "
-            f"Got {type(raw).__name__} instead."
+            f"Config must be a top-level mapping (key: value). Got {type(raw).__name__} instead."
         )
     return Config(raw)
