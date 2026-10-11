@@ -24,3 +24,14 @@ pytest>=8.0
 # transformers>=4.40           # tokenizer Llama 3 de dem token dung ngan sach 4000
 # beautifulsoup4>=4.12         # tach chu khoi HTML cua trang web trong CRAG
 # ollama>=0.3                  # client cho model chay cuc bo (sinh va cham)
+
+# src/squad (RAG + guardrail tren SQuAD 2.0) - bat khi chay cac module do:
+# sentence-transformers>=3.0   # bge-m3: truy hoi dense, context check, relevance
+# torch>=2.2
+# transformers>=4.40           # HHEM (flan-t5-base + dau phan loai)
+# safetensors                  # doc trong so HHEM
+# huggingface_hub
+# faiss-cpu>=1.8               # index dense
+# rank-bm25>=0.2               # index tu khoa
+# numpy
+# scipy                        # kiem dinh McNemar
