@@ -1,0 +1,8 @@
+# --- bắt buộc (đủ để chạy `python run_s1.py --demo`) ---
+numpy>=1.24
+scipy>=1.10
+
+# --- cần khi chạy với model thật ---
+sentence-transformers>=3.0
+transformers>=4.51      # Qwen3-Embedding yêu cầu >= 4.51
+torch>=2.1
