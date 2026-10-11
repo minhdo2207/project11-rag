@@ -2,10 +2,15 @@
 
 Chỉ kiểm tra "chạy được", không kiểm tra chất lượng. Runner S1 trả mã 1 là chủ đích:
 trên bộ demo cả ba chế độ đều đạt recall@5 = 1.0 nên bộ eval không phân biệt được chúng.
+
+Embedder demo của cả 7 runner dùng hash() có sẵn của Python, mà hash() đổi seed mỗi tiến
+trình, nên kết quả (và mã thoát của S5) dao động giữa các lần chạy. Test ghim
+PYTHONHASHSEED=0 để kết quả ổn định.
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -26,7 +31,8 @@ def test_demo_runner(name: str) -> None:
     cmd = [sys.executable, f"run_{name}.py", "--demo"]
     if name == "s4":
         cmd += ["--as-of", "2026-10-07"]  # runner dùng ngày hôm nay nếu không truyền
+    env = {**os.environ, "PYTHONHASHSEED": "0"}
     result = subprocess.run(
-        cmd, cwd=P3_DIR / name, capture_output=True, text=True, timeout=300, check=False
+        cmd, cwd=P3_DIR / name, capture_output=True, text=True, timeout=300, check=False, env=env
     )
     assert result.returncode == EXPECTED_EXIT[name], result.stdout[-500:] + result.stderr[-500:]
