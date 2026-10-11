@@ -40,6 +40,12 @@ class FileKnowledgeRepository(KnowledgeRepository):
         self._store[document.doc_id] = document
         self._flush()
 
+    def add_many(self, documents: list[Document]) -> None:
+        # Ghi file một lần cho cả lô, thay vì một lần mỗi tài liệu.
+        for document in documents:
+            self._store[document.doc_id] = document
+        self._flush()
+
     def get(self, doc_id: str) -> Document | None:
         return self._store.get(doc_id)
 

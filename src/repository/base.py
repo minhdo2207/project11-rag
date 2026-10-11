@@ -36,6 +36,11 @@ class KnowledgeRepository(ABC):
             document: Document to store.
         """
 
+    def add_many(self, documents: list[Document]) -> None:
+        """Add or overwrite many documents. Backends may override to batch the write."""
+        for document in documents:
+            self.add(document)
+
     @abstractmethod
     def get(self, doc_id: str) -> Document | None:
         """Retrieve a document by id.
