@@ -64,7 +64,7 @@ with minimal code changes to swap backends. We achieve this via:
 from src.config import load_config
 from src.repository.factory import build_repository
 
-repo = build_repository(load_config())   # backend from config.yaml, one change to swap
+repo = build_repository(load_config())  # backend from config.yaml, one change to swap
 ```
 
 Change `storage.backend` in `config.yaml` to `memory | file | qdrant`. Business logic 
