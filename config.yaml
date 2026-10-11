@@ -6,8 +6,9 @@ storage:
   path: data/kb          # dung cho backend = file hoac qdrant (local)
 
 embedding:
-  model: bge-m3          # hoac Qwen3-Embedding-0.6B
-  dim: 1024
+  provider: ollama       # ollama | hashing (hashing: offline, khong co ngu nghia, de test/demo)
+  model: bge-m3          # ollama pull bge-m3 (hoac nomic-embed-text, Qwen3-Embedding)
+  dim: 1024              # chi dung cho provider = hashing
 
 # Cac tang cua pipeline RAG - bat dan tung cai khi implement xong
 pipeline:
@@ -24,6 +25,6 @@ retrieval:
 
 llm:
   provider: ollama
-  model: qwen2.5
+  model: qwen2.5:7b      # ollama pull qwen2.5:7b
   temperature: 0.1
   max_tokens: 512        # de rong de tranh cat cut cau tra loi (bai hoc tu seminar CRAG)
