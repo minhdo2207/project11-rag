@@ -13,3 +13,7 @@ pytest>=8.0
 # lettucedetect           # kiem chung hallucination
 # scikit-learn            # metrics
 # matplotlib              # bieu do
+
+# experiments/p3_retrieval (chi can de chay runner demo + tests/test_p3_smoke.py):
+# numpy
+# scipy
