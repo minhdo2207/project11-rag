@@ -1,0 +1,425 @@
+"""S1 — Hybrid retrieval baseline.
+
+Three components, nothing more:
+
+    dense bi-encoder  +  BM25 (code-aware tokenizer)  →  RRF (k=60)
+
+The `mode` switch ("dense" | "bm25" | "hybrid") is the whole point of S1. The
+deliverable of this scenario is not the retriever — it is the three-way
+comparison that tells you whether fusion is actually earning its keep, and
+whether your embedding model is contributing at all.
+
+Why RRF and not a weighted score blend: BM25 produces unbounded positive scores
+while cosine is bounded in [-1, 1]. Mixing the raw numbers hands BM25 dominant
+weight by accident. RRF operates only on rank positions, so no normalisation
+assumption is needed.
+
+S3 ADDS a second stage: an optional cross-encoder reranker over the top-N fused
+candidates. Two things make this more than a wrapper call:
+
+  * `fusion="rrf"` blends the cross-encoder ranking with the first-stage ranking
+    rather than replacing it, so a reranker cannot overrule a first stage that
+    was already right.
+  * every Hit carries both `fused_score` and `rerank_score`, so the ablation can
+    attribute any change to the right stage, and S7 can calibrate a threshold on
+    the reranker score.
+
+Still NOT here (later scenarios, deliberately absent):
+    S4 metadata filter · S5 query rewriting · S6 adaptive-k / MMR
+    S7 abstention · S8 index-time enrichment
+
+Dependencies: numpy, scipy.
+"""
+
+from __future__ import annotations
+
+import json
+import pickle
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Iterable, Sequence
+
+import numpy as np
+from scipy import sparse
+
+__all__ = [
+    "RetrieverConfig", "Document", "Hit", "RetrievalResult",
+    "HybridRetriever", "BM25Index", "tokenize", "rrf",
+]
+
+
+# =========================================================================== #
+# config & records
+# =========================================================================== #
+
+@dataclass
+class RetrieverConfig:
+    mode: str = "hybrid"            # "dense" | "bm25" | "hybrid"
+
+    dense_top_k: int = 60           # candidates from each branch before fusion
+    lexical_top_k: int = 60
+    rrf_k: int = 60                 # RRF smoothing constant
+    weight_dense: float = 1.0       # S1 keeps these equal; S5 makes them query-dependent
+    weight_lexical: float = 1.0
+
+    top_k: int = 5                  # fixed k — adaptive-k is S6
+
+    # --- S3: reranking ---
+    rerank_enabled: bool = False    # off by default: S3 must prove it helps
+    rerank_candidates: int = 50     # first-stage hits sent to the cross-encoder
+    rerank_fusion: str = "replace"  # "replace" = pure CE order
+                                    # "rrf"     = fuse CE rank with first-stage rank
+    rerank_fusion_k: int = 60
+    rerank_weight_ce: float = 1.0
+    rerank_weight_first: float = 1.0
+
+    bm25_k1: float = 1.2
+    bm25_b: float = 0.75
+    split_identifiers: bool = True
+
+
+@dataclass
+class Document:
+    id: str
+    text: str
+    metadata: dict = field(default_factory=dict)
+    embed_text: str | None = None
+
+    @property
+    def to_embed(self) -> str:
+        return self.embed_text or self.text
+
+
+@dataclass
+class Hit:
+    doc: Document
+    score: float                    # final score after whatever stages ran
+    dense_rank: int | None = None
+    lexical_rank: int | None = None
+    dense_score: float | None = None
+    lexical_score: float | None = None
+    # --- S3 ---
+    fused_score: float | None = None    # first-stage score, kept for attribution
+    fused_rank: int | None = None
+    rerank_score: float | None = None   # cross-encoder score in [0,1]
+
+
+@dataclass
+class RetrievalResult:
+    query: str
+    hits: list[Hit]
+    mode: str = "hybrid"
+    diagnostics: dict = field(default_factory=dict)
+
+    def ids(self) -> list[str]:
+        return [h.doc.id for h in self.hits]
+
+    def context(self, max_chars: int = 12000, separator: str = "\n---\n") -> str:
+        parts, used = [], 0
+        for h in self.hits:
+            src = h.doc.metadata.get("source") or h.doc.metadata.get("path") or ""
+            block = f"[{h.doc.id}] {src}".rstrip() + f"\n{h.doc.text}"
+            if used + len(block) > max_chars:
+                break
+            parts.append(block)
+            used += len(block) + len(separator)
+        return separator.join(parts)
+
+
+def _coerce(obj: Any) -> Document:
+    """Accept Document, dict, or any object with id/text — so this drops into an
+    existing codebase without forcing a schema change."""
+    if isinstance(obj, Document):
+        return obj
+    if isinstance(obj, dict):
+        return Document(
+            id=str(obj.get("id") or obj.get("chunk_id") or obj.get("doc_id")),
+            text=obj.get("text") or obj.get("content") or "",
+            metadata=obj.get("metadata") or obj.get("meta") or {},
+            embed_text=obj.get("embed_text"),
+        )
+    return Document(
+        id=str(getattr(obj, "id", None) or getattr(obj, "chunk_id")),
+        text=getattr(obj, "text", "") or getattr(obj, "content", ""),
+        metadata=getattr(obj, "metadata", None) or getattr(obj, "meta", None) or {},
+        embed_text=getattr(obj, "embed_text", None),
+    )
+
+
+# =========================================================================== #
+# lexical branch
+# =========================================================================== #
+
+# Unicode-aware. The ASCII-only class [^0-9A-Za-z_] shreds Vietnamese text:
+# "mật khẩu" tokenises to ['m','t','kh','u'] because every accented
+# character is treated as a separator, which silently disables the lexical
+# branch for the whole corpus. \W respects Unicode letters in Python 3.
+_NON_WORD = re.compile(r"\W+", re.UNICODE)
+_CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def tokenize(text: str, split_identifiers: bool = True) -> list[str]:
+    """Keeps each identifier whole AND emits its subtokens.
+
+    A generic word tokenizer turns `build_comm_edges` into one opaque token that
+    never matches "build communication edges"; keeping only subtokens loses
+    exact-symbol matching. Emitting both wins on either phrasing, at the cost of
+    a slightly larger vocabulary.
+    """
+    out: list[str] = []
+    for raw in _NON_WORD.split(text):
+        if not raw:
+            continue
+        out.append(raw.lower())
+        if not split_identifiers:
+            continue
+        parts = [p for chunk in raw.split("_") if chunk for p in _CAMEL.split(chunk)]
+        if len(parts) > 1:
+            out.extend(p.lower() for p in parts if len(p) > 1)
+    return out
+
+
+class BM25Index:
+    """BM25 on a precomputed sparse weight matrix: scoring a query is a column
+    gather plus a row sum. No external retrieval library to install."""
+
+    def __init__(self, k1: float = 1.2, b: float = 0.75, split_identifiers: bool = True):
+        self.k1, self.b, self.split_identifiers = k1, b, split_identifiers
+        self.vocab: dict[str, int] = {}
+        self.W: sparse.csc_matrix | None = None
+        self.n_docs = 0
+
+    def build(self, texts: Sequence[str]) -> "BM25Index":
+        docs = [tokenize(t, self.split_identifiers) for t in texts]
+        self.n_docs = len(docs)
+        if not self.n_docs:
+            return self
+
+        vocab: dict[str, int] = {}
+        rows, cols, tfs = [], [], []
+        for d, toks in enumerate(docs):
+            counts: dict[int, int] = {}
+            for t in toks:
+                j = vocab.setdefault(t, len(vocab))
+                counts[j] = counts.get(j, 0) + 1
+            for j, c in counts.items():
+                rows.append(d); cols.append(j); tfs.append(c)
+        self.vocab = vocab
+
+        tf = sparse.csr_matrix((tfs, (rows, cols)),
+                               shape=(self.n_docs, len(vocab)), dtype=np.float32).tocoo()
+        dl = np.asarray([len(d) for d in docs], dtype=np.float32)
+        avgdl = max(float(dl.mean()), 1e-9)
+        df = np.bincount(tf.col, minlength=len(vocab)).astype(np.float32)
+        idf = np.log(1.0 + (self.n_docs - df + 0.5) / (df + 0.5)).astype(np.float32)
+
+        denom = self.k1 * (1 - self.b + self.b * dl / avgdl)
+        w = (tf.data * (self.k1 + 1)) / (tf.data + denom[tf.row]) * idf[tf.col]
+        self.W = sparse.csr_matrix((w, (tf.row, tf.col)),
+                                   shape=(self.n_docs, len(vocab)), dtype=np.float32).tocsc()
+        return self
+
+    def search(self, query: str, top_k: int = 60) -> list[tuple[int, float]]:
+        if self.W is None or not self.n_docs:
+            return []
+        cols = [self.vocab[t] for t in tokenize(query, self.split_identifiers)
+                if t in self.vocab]
+        if not cols:
+            return []
+        scores = np.asarray(self.W[:, cols].sum(axis=1)).ravel()
+        k = min(top_k, self.n_docs)
+        idx = np.argpartition(-scores, k - 1)[:k]
+        idx = idx[np.argsort(-scores[idx])]
+        return [(int(i), float(scores[i])) for i in idx if scores[i] > 0]
+
+
+# =========================================================================== #
+# fusion
+# =========================================================================== #
+
+def rrf(ranked_lists: Sequence[tuple[Sequence[int], float]], k: int = 60) -> dict[int, float]:
+    """Reciprocal Rank Fusion: score(d) = Σ w_i / (k + rank_i(d)).
+
+    k controls how sharply top ranks are favoured — smaller k gives the top of
+    each list more influence. k=60 is the value from Cormack et al. (2009) and a
+    reasonable default; sweep it once you have an eval set.
+    """
+    out: dict[int, float] = {}
+    for ids, w in ranked_lists:
+        if w <= 0:
+            continue
+        for rank, doc_id in enumerate(ids, start=1):
+            out[doc_id] = out.get(doc_id, 0.0) + w / (k + rank)
+    return out
+
+
+# =========================================================================== #
+# retriever
+# =========================================================================== #
+
+class HybridRetriever:
+    def __init__(self, embedder, config: RetrieverConfig | None = None,
+                 reranker=None):
+        self.embedder = embedder
+        self.config = config or RetrieverConfig()
+        self.reranker = reranker        # any object with .score(query, docs) -> ndarray
+        self.docs: list[Document] = []
+        self.vectors: np.ndarray | None = None
+        self.bm25: BM25Index | None = None
+
+    # -- indexing ----------------------------------------------------------- #
+
+    def index(self, documents: Iterable[Any], *, vectors: np.ndarray | None = None,
+              show_progress: bool = False) -> "HybridRetriever":
+        docs = [_coerce(d) for d in documents]
+        if not docs:
+            raise ValueError("no documents to index")
+
+        if vectors is None:
+            try:
+                vectors = self.embedder.encode_documents(
+                    [d.to_embed for d in docs], show_progress=show_progress)
+            except TypeError:                      # embedder without show_progress
+                vectors = self.embedder.encode_documents([d.to_embed for d in docs])
+        vectors = np.ascontiguousarray(vectors, dtype=np.float32)
+        if len(vectors) != len(docs):
+            raise ValueError(f"vectors({len(vectors)}) != documents({len(docs)})")
+
+        self.docs, self.vectors = docs, vectors
+        self.bm25 = BM25Index(self.config.bm25_k1, self.config.bm25_b,
+                              self.config.split_identifiers).build([d.to_embed for d in docs])
+        return self
+
+    # -- branches ----------------------------------------------------------- #
+
+    def _dense(self, qvec: np.ndarray, top_k: int) -> list[tuple[int, float]]:
+        scores = self.vectors @ qvec.reshape(-1)        # cosine; vectors normalised
+        k = min(top_k, len(self.docs))
+        idx = np.argpartition(-scores, k - 1)[:k]
+        idx = idx[np.argsort(-scores[idx])]
+        return [(int(i), float(scores[i])) for i in idx]
+
+    # -- main --------------------------------------------------------------- #
+
+    def retrieve(self, query: str, *, top_k: int | None = None,
+                 mode: str | None = None,
+                 rerank: bool | None = None) -> RetrievalResult:
+        if self.vectors is None or self.bm25 is None:
+            raise RuntimeError("call index() before retrieve()")
+
+        c = self.config
+        mode = mode or c.mode
+        if mode not in {"dense", "bm25", "hybrid"}:
+            raise ValueError(f"unknown mode {mode!r}")
+        k_final = top_k or c.top_k
+
+        dense = lexical = []
+        if mode in {"dense", "hybrid"}:
+            qvec = self.embedder.encode_queries([query])[0]
+            dense = self._dense(qvec, c.dense_top_k)
+        if mode in {"bm25", "hybrid"}:
+            lexical = self.bm25.search(query, c.lexical_top_k)
+
+        dmap = {i: (r, s) for r, (i, s) in enumerate(dense, 1)}
+        lmap = {i: (r, s) for r, (i, s) in enumerate(lexical, 1)}
+
+        if mode == "dense":
+            ordered = [(i, s) for i, s in dense]
+        elif mode == "bm25":
+            ordered = [(i, s) for i, s in lexical]
+        else:
+            fused = rrf([([i for i, _ in dense], c.weight_dense),
+                         ([i for i, _ in lexical], c.weight_lexical)], k=c.rrf_k)
+            ordered = sorted(fused.items(), key=lambda kv: -kv[1])
+
+        # --- S3: rerank the shortlist ------------------------------------- #
+        use_rerank = (rerank if rerank is not None else c.rerank_enabled) and \
+            self.reranker is not None
+        pool_n = c.rerank_candidates if use_rerank else k_final
+        pool = ordered[:pool_n]
+
+        hits = [
+            Hit(doc=self.docs[i], score=float(sc),
+                fused_score=float(sc), fused_rank=rank,
+                dense_rank=dmap[i][0] if i in dmap else None,
+                lexical_rank=lmap[i][0] if i in lmap else None,
+                dense_score=dmap[i][1] if i in dmap else None,
+                lexical_score=lmap[i][1] if i in lmap else None)
+            for rank, (i, sc) in enumerate(pool, start=1)
+        ]
+
+        rerank_ms = 0.0
+        if use_rerank and hits:
+            scores = self.reranker.score(query, [h.doc.text for h in hits])
+            rerank_ms = getattr(self.reranker, "last_latency_ms", 0.0)
+            for h, sc in zip(hits, scores):
+                h.rerank_score = float(sc)
+
+            if c.rerank_fusion == "rrf":
+                # Blend CE rank with first-stage rank. Guards against the known
+                # failure where a cross-encoder buries a chunk the first stage
+                # had correctly at #1 (typically an exact lexical match it
+                # reweights away).
+                ce_order = sorted(range(len(hits)), key=lambda j: -hits[j].rerank_score)
+                ce_rank = {j: r for r, j in enumerate(ce_order, start=1)}
+                blended = {
+                    j: c.rerank_weight_ce / (c.rerank_fusion_k + ce_rank[j])
+                       + c.rerank_weight_first / (c.rerank_fusion_k + hits[j].fused_rank)
+                    for j in range(len(hits))
+                }
+                for j, h in enumerate(hits):
+                    h.score = blended[j]
+            else:
+                for h in hits:
+                    h.score = h.rerank_score
+
+            hits.sort(key=lambda h: -h.score)
+
+        hits = hits[:k_final]
+
+        return RetrievalResult(
+            query=query, hits=hits, mode=mode,
+            diagnostics={
+                "n_dense": len(dense), "n_lexical": len(lexical),
+                # how much each branch contributed to the final list
+                "from_dense_only": sum(1 for h in hits if h.lexical_rank is None),
+                "from_lexical_only": sum(1 for h in hits if h.dense_rank is None),
+                "from_both": sum(1 for h in hits
+                                 if h.dense_rank is not None and h.lexical_rank is not None),
+                # --- S3 ---
+                "reranked": use_rerank,
+                "n_candidates": len(pool),
+                "rerank_ms": rerank_ms,
+                "best_rerank_score": hits[0].rerank_score if (use_rerank and hits) else None,
+                # how far the reranker moved things: 0 means it changed nothing
+                "rank_churn": (sum(abs(h.fused_rank - r) for r, h in enumerate(hits, 1))
+                               / max(len(hits), 1)) if use_rerank else 0.0,
+            },
+        )
+
+    # -- persistence -------------------------------------------------------- #
+
+    def save(self, path: str | Path) -> None:
+        d = Path(path); d.mkdir(parents=True, exist_ok=True)
+        np.save(d / "vectors.npy", self.vectors)
+        with open(d / "documents.jsonl", "w", encoding="utf-8") as f:
+            for doc in self.docs:
+                f.write(json.dumps({"id": doc.id, "text": doc.text,
+                                    "metadata": doc.metadata,
+                                    "embed_text": doc.embed_text},
+                                   ensure_ascii=False) + "\n")
+        with open(d / "bm25.pkl", "wb") as f:
+            pickle.dump(self.bm25, f)
+
+    @classmethod
+    def load(cls, path: str | Path, embedder,
+             config: RetrieverConfig | None = None) -> "HybridRetriever":
+        d = Path(path)
+        r = cls(embedder, config)
+        r.vectors = np.load(d / "vectors.npy")
+        with open(d / "documents.jsonl", encoding="utf-8") as f:
+            r.docs = [Document(**json.loads(line)) for line in f if line.strip()]
+        with open(d / "bm25.pkl", "rb") as f:
+            r.bm25 = pickle.load(f)
+        return r
