@@ -4,7 +4,6 @@ This script demonstrates the core workflow without LLM or embeddings.
 It focuses on configuration and document storage.
 """
 
-
 from src.config import load_config
 from src.models import Document
 from src.repository.factory import build_repository
