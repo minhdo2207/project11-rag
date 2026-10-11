@@ -1,5 +1,8 @@
 """P5 — Gộp nhãn từng câu thành chỉ số đánh giá.
 
+Phần cuối file (``accuracy``, ``balanced_accuracy``) đo bài toán độc/lành của detector;
+phần đầu (``three_label_report``) đo ba nhãn của CRAG.
+
 Ranh giới với phần còn lại của đường ống:
 
     src.crag.score   so câu trả lời với đáp án chuẩn  →  gán MỘT nhãn cho mỗi câu
@@ -77,3 +80,30 @@ def report_from_file(path: str | Path) -> dict:
                 raise ValueError(f"{path}: dòng {i} thiếu trường 'label'")
             labels.append(row["label"])
     return three_label_report(labels)
+
+
+def _check_pairs(y_true: list[str], y_pred: list[str]) -> None:
+    if not y_true:
+        raise ValueError("danh sách nhãn rỗng")
+    if len(y_true) != len(y_pred):
+        raise ValueError(f"độ dài khác nhau: y_true={len(y_true)}, y_pred={len(y_pred)}")
+
+
+def accuracy(y_true: list[str], y_pred: list[str]) -> float:
+    """Tỷ lệ dự đoán đúng (0..1) cho bài toán độc/lành. Nhãn ``unknown`` tính là sai."""
+    _check_pairs(y_true, y_pred)
+    return sum(t == p for t, p in zip(y_true, y_pred, strict=True)) / len(y_true)
+
+
+def balanced_accuracy(y_true: list[str], y_pred: list[str]) -> float:
+    """Trung bình recall của từng lớp có trong ``y_true`` (0..1).
+
+    Quan trọng khi dữ liệu lệch (gói lành nhiều hơn gói độc): một detector luôn đáp
+    "benign" có accuracy cao nhưng balanced accuracy chỉ 0.5.
+    """
+    _check_pairs(y_true, y_pred)
+    recalls = []
+    for cls in sorted(set(y_true)):
+        hits = [p == cls for t, p in zip(y_true, y_pred, strict=True) if t == cls]
+        recalls.append(sum(hits) / len(hits))
+    return sum(recalls) / len(recalls)
