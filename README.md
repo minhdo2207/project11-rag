@@ -137,10 +137,19 @@ scripts/               # fetch_data.py, run_detector.py
 - Business logic **storage-agnostic**: depends only on `Retriever` + `LLMClient` interfaces
 
 **`evaluation.py`** — Metrics & diagnostics
-- `accuracy`, `balanced_accuracy` (crucial for class imbalance: benign >> malicious)
-- Extensible: precision, recall, F1, false-negative rate
+- `accuracy`, `balanced_accuracy` for the malicious/benign task (crucial for class imbalance:
+  benign >> malicious). Precision, recall, F1 and false-negative rate are not implemented yet
+- `three_label_report` / `report_from_file`: accurate / hallucinated / missing / truthfulness
+  (the CRAG scoring), used by the CRAG ladder below
 - Advanced: **context-sufficiency analysis** (isolate retrieval vs. generation errors) and 
   **evidence localization** (does LLM cite correct lines?)
+
+**`crag/`** — Hallucination experiments on the CRAG benchmark (P5)
+- A ladder of configurations B0–B5 (no documents → snippets → hybrid retrieval → reranking →
+  citations → refusal gate), each changing exactly one thing, scored with two independent graders
+- Separate from the PyPI detector: it measures how much each RAG component reduces hallucination
+  on general question answering with `llama3:8b`. Needs a GPU and a large data download
+- Full description and how to re-run: [src/crag/README.md](src/crag/README.md)
 
 ### Ablation Studies
 
