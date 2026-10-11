@@ -151,6 +151,14 @@ scripts/               # fetch_data.py, run_detector.py
   on general question answering with `llama3:8b`. Needs a GPU and a large data download
 - Full description and how to re-run: [src/crag/README.md](src/crag/README.md)
 
+**`squad/`** — RAG + post-generation guardrail on SQuAD 2.0 (P5)
+- Configurations C0–C6 (no RAG → hybrid RAG → one check each → all checks): context check,
+  lexical grounding, HHEM grounding and answer relevance decide whether to answer or abstain;
+  thresholds are tuned on a dev split and frozen before the test split is scored
+- Reports truthfulness together with correct-abstention and over-refusal rates, with bootstrap
+  confidence intervals and McNemar tests, for `llama3:8b` and `phi3:mini` (both 4-bit)
+- Full description and how to re-run: [src/squad/README.md](src/squad/README.md)
+
 ### Ablation Studies
 
 Feature flags in `config.yaml` (`pipeline.chunking`, `pipeline.retrieval`, `pipeline.rerank`, etc.)
