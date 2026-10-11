@@ -36,13 +36,20 @@ their own scenario folder. `--demo` needs no GPU and no model download.
 - **Exit code 1 from `run_s1.py --demo` is intentional.** Every runner has a stop
   condition. On the demo set all three modes reach recall@5 = 1.0, so the eval set
   cannot separate them and the script exits non-zero on purpose.
-- **S4 and S7 depend on today's date.** The metadata filter uses `date.today()` as
+- **Demo results vary from run to run.** The demo hashing embedder in every `run_sN.py`
+  uses Python's built-in `hash()`, which is re-seeded per process. Recall and ablation
+  numbers (and the exit code of `run_s5.py`, which occasionally comes out as 1) therefore
+  change between runs. Set `PYTHONHASHSEED=0` for a reproducible run; the smoke test does.
+  The fix is a one-line swap to a stable hash (for example `zlib.crc32`) and was left out
+  to keep the delivered code unchanged.
+- **S4 and S7 also depend on today's date.** The metadata filter uses `date.today()` as
   `as_of`, so the demo output drifts as documents expire. Pass `--as-of` to `run_s4.py`
   for a reproducible run.
-- **Numbers in the PDF are not all reproduced by the code as shipped.** For example
-  the S2 `structure` variant reaches `span_coverage@5 = 1.000` here versus 0.889 in the
-  report, and the S3 and S4 demo figures differ too. The mechanisms and conclusions
-  match; the exact figures need a re-run before they go into the final report.
+- **Numbers in the PDF will not match a fresh run.** Because of the two points above, the
+  figures in the report (for example S2 `span_coverage@5` 0.889 for `structure`, or the
+  S3 and S4 demo values) are not reproduced exactly by the code as shipped. The mechanisms
+  and conclusions hold; the exact figures need a re-run on real data before they go into
+  the final report.
 - **Not wired into `src/` yet.** These packages define their own `Document`/`Hit` and
   persist their index with `pickle` + JSONL, so they do not go through
   `KnowledgeRepository` (memory/file/qdrant). Integrating them with the shared
