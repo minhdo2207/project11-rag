@@ -5,7 +5,7 @@ phần đầu (``three_label_report``) đo ba nhãn của CRAG.
 
 Ranh giới với phần còn lại của đường ống:
 
-    src.crag.score   so câu trả lời với đáp án chuẩn  →  gán MỘT nhãn cho mỗi câu
+    src.crag.score / src.squad.label   so với đáp án chuẩn  →  gán MỘT nhãn cho mỗi câu
                               │
                               ▼  list[str]
     src.evaluation   gộp nhãn thành chỉ số  →  accurate / hallucinated / missing / truthfulness
@@ -31,12 +31,16 @@ UNPARSED = "unparsed"  # giám khảo trả về thứ không đọc được �
 
 LABELS = (ACCURATE, HALLUCINATED, MISSING, UNPARSED)
 
+# Luồng SQuAD (src.squad.label) ghi nhãn câu bịa là "hallucination"; coi như cùng một nhãn.
+ALIASES = {"hallucination": HALLUCINATED}
+
 
 def three_label_report(labels: list[str], penalty: float = 1.0) -> dict:
     """Ba nhãn gốc của CRAG, đơn vị phần trăm.
 
     Args:
-        labels: nhãn của từng câu, mỗi phần tử thuộc ``LABELS``.
+        labels: nhãn của từng câu, mỗi phần tử thuộc ``LABELS`` (hoặc tên khác trong
+            ``ALIASES``).
         penalty: số điểm bị trừ cho một câu bịa. CRAG dùng 1; luật +1/−4/0 của
             why-rags-hallucinate dùng 4. Chỉ ảnh hưởng ``score``, không ảnh hưởng
             ``truthfulness`` — để số cũ vẫn so được.
@@ -52,6 +56,7 @@ def three_label_report(labels: list[str], penalty: float = 1.0) -> dict:
     """
     if not labels:
         raise ValueError("danh sách nhãn rỗng")
+    labels = [ALIASES.get(label, label) for label in labels]
     unknown = set(labels) - set(LABELS)
     if unknown:
         raise ValueError(f"nhãn không hợp lệ: {sorted(unknown)}; hợp lệ: {list(LABELS)}")
@@ -140,7 +145,11 @@ def load_scored(path: str | Path) -> list[dict]:
 
 
 def report_from_file(path: str | Path) -> dict:
-    """Đọc file ``.scored_*.jsonl`` của ``src.crag.score`` rồi rút trường ``label``."""
+    """Đọc file nhãn từng câu (vd. ``labeled_*.jsonl`` của ``src.squad.label``), rút ``label``.
+
+    Câu còn nhãn ``unmatched`` (chưa qua giám khảo) sẽ bị báo là nhãn không hợp lệ: phải chạy
+    giám khảo rồi gán nhãn lại trước khi tính chỉ số.
+    """
     path = Path(path)
     labels = []
     with path.open(encoding="utf-8") as fh:
