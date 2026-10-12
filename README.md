@@ -140,16 +140,9 @@ scripts/               # fetch_data.py, run_detector.py
 - `accuracy`, `balanced_accuracy` for the malicious/benign task (crucial for class imbalance:
   benign >> malicious). Precision, recall, F1 and false-negative rate are not implemented yet
 - `three_label_report` / `report_from_file`: accurate / hallucinated / missing / truthfulness
-  (the CRAG scoring), used by the CRAG ladder below
+  (the CRAG scoring); also reads the per-question labels written by the SQuAD flow below
 - Advanced: **context-sufficiency analysis** (isolate retrieval vs. generation errors) and 
   **evidence localization** (does LLM cite correct lines?)
-
-**`crag/`** — Hallucination experiments on the CRAG benchmark (P5)
-- A ladder of configurations B0–B5 (no documents → snippets → hybrid retrieval → reranking →
-  citations → refusal gate), each changing exactly one thing, scored with two independent graders
-- Separate from the PyPI detector: it measures how much each RAG component reduces hallucination
-  on general question answering with `llama3:8b`. Needs a GPU and a large data download
-- Full description and how to re-run: [src/crag/README.md](src/crag/README.md)
 
 **`squad/`** — RAG + post-generation guardrail on SQuAD 2.0 (P5)
 - Configurations C0–C6 (no RAG → hybrid RAG → one check each → all checks): context check,

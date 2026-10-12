@@ -13,7 +13,7 @@ data/kb/
 .idea/
 data/
 
-# Sinh ra khi chay bac thang CRAG (src/crag), khong commit
+# Sinh ra khi chay thuc nghiem (src/squad), khong commit
 results/
 logs/
 refs/

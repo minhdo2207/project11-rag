@@ -4,8 +4,8 @@ Luồng thực nghiệm cho đề tài *RAG as a Hallucination Guardrail for a S
 các bước kiểm tra sau khi sinh giảm bịa đặt được bao nhiêu trên model nhỏ, và phải trả giá bao
 nhiêu câu bị từ chối nhầm.
 
-Khác với [`src/crag`](../crag/README.md) (lọc tài liệu **trước** khi sinh), luồng này kiểm tra
-**câu trả lời sau khi sinh** rồi mới quyết định trả lời hay từ chối.
+Guardrail ở đây kiểm tra **câu trả lời sau khi sinh** rồi mới quyết định trả lời hay từ chối.
+Cách chấm lấy ba nhãn của CRAG (arXiv 2406.04744): câu đúng +1, câu từ chối 0, câu bịa −1.
 
 ## Luồng chạy
 

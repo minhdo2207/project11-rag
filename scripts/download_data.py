@@ -302,85 +302,6 @@ def download_ossf() -> None:
     )
 
 
-def download_crag() -> None:
-    """Benchmark CRAG task 1 & 2 (Meta, NeurIPS 2024) — bản v4 mà docs/dataset.md trỏ tới."""
-    dest = RAW / "crag"
-    dest.mkdir(parents=True, exist_ok=True)
-    name = "crag_task_1_and_2_dev_v4.jsonl.bz2"
-    target = dest / name
-    url = f"https://github.com/facebookresearch/CRAG/raw/refs/heads/main/data/{name}"
-    expected = 739_384_484  # đã kiểm tra bằng HTTP HEAD ngày 15/09/2026
-
-    if not (target.exists() and target.stat().st_size == expected):
-        # -C - để tải tiếp nếu lần trước đứt giữa chừng
-        _run(["curl", "-L", "--fail", "--retry", "3", "-C", "-", "-o", str(target), url])
-    size = target.stat().st_size
-    if size != expected:
-        raise RuntimeError(f"dung lượng lệch: {size:,} ≠ {expected:,} byte")
-
-    _record(
-        "crag",
-        {
-            "url": url,
-            "file": name,
-            "bytes": size,
-            "note": "task 1 & 2; split=1 là public test (bài báo dùng 1.335 câu)",
-        },
-    )
-    print(f"CRAG: {name} {size:,} B")
-
-
-def download_crag_task3() -> None:
-    """CRAG task 3 — 50 trang web mỗi câu thay vì 5. Chia làm 4 phần trên GitHub.
-
-    Bốn phần nối lại thành một file .tar.bz2 duy nhất; không giải nén ra đĩa mà đọc
-    luồng thẳng vào bước nạp (xem src/crag/ingest.py --task3).
-    """
-    dest = RAW / "crag"
-    dest.mkdir(parents=True, exist_ok=True)
-    base = "https://github.com/facebookresearch/CRAG/raw/refs/heads/main/data"
-    parts = {  # dung lượng lấy bằng HTTP HEAD ngày 25/09/2026
-        "crag_task_3_dev_v5.tar.bz2.part0": 2_147_483_648,
-        "crag_task_3_dev_v5.tar.bz2.part1": 2_147_483_648,
-        "crag_task_3_dev_v5.tar.bz2.part2": 2_147_483_648,
-        "crag_task_3_dev_v5.tar.bz2.part3": 1_283_117_287,
-    }
-    total = 0
-    for name, expected in parts.items():
-        target = dest / name
-        if not (target.exists() and target.stat().st_size == expected):
-            _run(
-                [
-                    "curl",
-                    "-L",
-                    "--fail",
-                    "--retry",
-                    "5",
-                    "-C",
-                    "-",
-                    "-o",
-                    str(target),
-                    f"{base}/{name}",
-                ]
-            )
-        size = target.stat().st_size
-        if size != expected:
-            raise RuntimeError(f"{name}: dung lượng lệch {size:,} != {expected:,}")
-        total += size
-        print(f"  {name} {size:,} B")
-
-    _record(
-        "crag_task3",
-        {
-            "base_url": base,
-            "parts": list(parts),
-            "bytes": total,
-            "note": "50 trang/câu; nối 4 phần rồi đọc luồng tar.bz2",
-        },
-    )
-    print(f"CRAG task 3: {total:,} B trong {len(parts)} phần")
-
-
 def download_pkghal() -> None:
     """Repo PackageHallucination (USENIX Security 2025) — dataset cho Task 2."""
     dest = RAW / "PackageHallucination"
@@ -405,8 +326,6 @@ def download_pkghal() -> None:
 
 
 STEPS = {
-    "crag": download_crag,
-    "crag_task3": download_crag_task3,
     "datadog": download_datadog,
     "benign": download_benign,
     "yara": download_yara,
