@@ -62,6 +62,27 @@ def test_doc_duoc_file_da_cham(tmp_path):
     assert r["truthfulness"] == pytest.approx(0.0)
 
 
+def test_doc_duoc_nhan_cua_luong_squad(tmp_path):
+    """src.squad.label ghi "hallucination"; phải tính như "hallucinated"."""
+    path = tmp_path / "labeled_llama3_c1_dev.jsonl"
+    rows = [
+        {"qid": "a", "label": "accurate"},
+        {"qid": "b", "label": "accurate"},
+        {"qid": "c", "label": "hallucination"},
+        {"qid": "d", "label": "missing"},
+    ]
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    r = report_from_file(path)
+    assert r["hallucination"] == 25.0
+    assert r["truthfulness"] == pytest.approx(25.0)  # 50 − 25
+    assert r["counts"]["hallucinated"] == 1
+
+
+def test_cau_chua_qua_giam_khao_thi_bao_loi():
+    with pytest.raises(ValueError, match="không hợp lệ"):
+        three_label_report(["accurate", "unmatched"])
+
+
 def test_dong_thieu_truong_label_thi_bao_loi(tmp_path):
     path = tmp_path / "hong.jsonl"
     path.write_text(json.dumps({"interaction_id": "a"}) + "\n", encoding="utf-8")
