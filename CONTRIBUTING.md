@@ -46,11 +46,11 @@ ruff format . && ruff check . && python -m pytest -q
 
 | Role | May edit | Do not touch |
 |------|----------|--------------|
-| P1 | `src/repository/`, `src/config.py`, `src/models.py`, CI, architecture docs | other people's ML logic |
-| P2 | `data/`, ingest scripts | the interfaces in `repository/` |
-| P3 | `src/embedding.py`, `src/retriever.py` | `detector.py` |
-| P4 | `src/llm_client.py`, `src/detector.py` | `retriever.py` |
-| P5 | `src/evaluation.py`, `notebooks/` | the core modules |
+| P1 | `src/repository/`, `src/config.py`, `src/models.py`, `src/_ollama.py`, `config.yaml`, CI, architecture docs | other people's ML logic |
+| P2 | `data/`, `src/ingest.py`, `scripts/fetch_data.py` | the interfaces in `repository/` |
+| P3 | `src/embedding.py`, `src/retriever.py`, `experiments/p3_retrieval/` | `detector.py` |
+| P4 | `src/llm_client.py`, `src/detector.py`, `scripts/run_detector.py` | `retriever.py` |
+| P5 | `src/evaluation.py`, `src/crag/`, `notebooks/`, and the CRAG scripts in `scripts/` (`download_data.py`, `inspect_data.py`, `run_*.sh`) | the core modules |
 
 Interfaces (the abstract classes) are decided by P1. If you need to change an interface, tell
 P1 instead of editing it yourself, because it will break other people's code.
