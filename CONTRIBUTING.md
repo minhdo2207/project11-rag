@@ -1,32 +1,34 @@
-# Quy tắc đẩy code (đọc trước khi commit)
+# Contribution rules (read before you commit)
 
-File này để cả nhóm làm việc trên cùng repo mà không dẫm chân nhau. Ai cũng đọc 1 lần.
+This file lets the whole team work in one repo without stepping on each other. Everyone
+reads it once.
 
-## 1. Nhánh
+## 1. Branches
 
-- `main`: luôn phải chạy được (test xanh). Không push thẳng vào `main`.
-- Mỗi người làm trên nhánh riêng theo mẫu: `<vai>/<việc>`
-  - ví dụ: `p3/hybrid-retrieval`, `p5/eval-metrics`, `p1/qdrant-repo`
-- Xong việc → mở Pull Request vào `main`, để P1 review rồi merge.
+- `main`: must always work (green tests). Never push directly to `main`.
+- Everyone works on their own branch, named `<role>/<task>`:
+  - examples: `p3/hybrid-retrieval`, `p5/eval-metrics`, `p1/qdrant-repo`
+- When you are done, open a Pull Request into `main`; P1 reviews and merges.
 
-## 2. Commit
+## 2. Commits
 
-- Commit nhỏ, thường xuyên. Một commit = một thay đổi có nghĩa, đừng dồn 1 cục to.
-- Message theo kiểu Conventional Commits (tiếng Việt cũng được):
+- Small, frequent commits. One commit = one meaningful change; don't pile everything into one
+  big commit.
+- Messages follow Conventional Commits (Vietnamese is fine too):
   ```
-  <type>: <mô tả ngắn>
+  <type>: <short description>
 
-  <giải thích thêm nếu cần>
+  <more explanation if needed>
   ```
-- `type` hay dùng: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`.
-- Ví dụ:
-  - `feat: them hybrid retriever (BM25 + vector)`
-  - `test: bo sung test cho repository factory`
-  - `fix: sua loi doc config khi thieu key`
+- Common `type` values: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`.
+- Examples:
+  - `feat: add hybrid retriever (BM25 + vector)`
+  - `test: add tests for the repository factory`
+  - `fix: handle missing keys when reading config`
 
-## 3. Trước khi push
+## 3. Before you push
 
-Chạy đủ 3 bước, đỏ chỗ nào sửa chỗ đó rồi mới push:
+Run all three steps and fix whatever is red before pushing:
 
 ```bash
 make format   # ruff format
@@ -34,32 +36,32 @@ make lint     # ruff check
 make test     # pytest
 ```
 
-Hoặc chạy tay:
+Or run them by hand:
 
 ```bash
 ruff format . && ruff check . && python -m pytest -q
 ```
 
-## 4. Ranh giới module (ai đụng file nào)
+## 4. Module boundaries (who touches which file)
 
-| Vai | File được sửa | Không đụng |
-|-----|---------------|------------|
-| P1 | `src/repository/`, `src/config.py`, `src/models.py`, CI, docs kiến trúc | logic ML của người khác |
-| P2 | `data/`, script ingest | interface trong `repository/` |
+| Role | May edit | Do not touch |
+|------|----------|--------------|
+| P1 | `src/repository/`, `src/config.py`, `src/models.py`, CI, architecture docs | other people's ML logic |
+| P2 | `data/`, ingest scripts | the interfaces in `repository/` |
 | P3 | `src/embedding.py`, `src/retriever.py` | `detector.py` |
 | P4 | `src/llm_client.py`, `src/detector.py` | `retriever.py` |
-| P5 | `src/evaluation.py`, `notebooks/` | các module lõi |
+| P5 | `src/evaluation.py`, `notebooks/` | the core modules |
 
-Interface (các class trừu tượng) do P1 chốt. Nếu cần đổi interface → báo P1, đừng tự sửa
-vì sẽ vỡ code người khác.
+Interfaces (the abstract classes) are decided by P1. If you need to change an interface, tell
+P1 instead of editing it yourself, because it will break other people's code.
 
-## 5. Review PR
+## 5. Reviewing PRs
 
-- PR nên nhỏ (< ~300 dòng), dễ đọc.
-- Mô tả PR ghi rõ: làm gì, test ra sao, còn thiếu gì.
-- P1 (hoặc người được chỉ định) đọc + chạy test local rồi mới merge.
+- Keep PRs small (< ~300 lines) and easy to read.
+- The PR description states what it does, how it was tested, and what is still missing.
+- P1 (or whoever is designated) reads the change and runs the tests locally before merging.
 
-## 6. Không commit rác
+## 6. Don't commit junk
 
-Không đẩy lên repo: `__pycache__/`, `.venv/`, dữ liệu nặng, file model tải về,
-`data/kb/` (index sinh ra). Đã có trong `.gitignore`.
+Do not push: `__pycache__/`, `.venv/`, large data, downloaded model files, `data/kb/`
+(generated index). These are already in `.gitignore`.
