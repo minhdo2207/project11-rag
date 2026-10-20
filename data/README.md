@@ -42,6 +42,40 @@ pip install -r requirements.txt
 # Tải SQuAD 2.0 (~4.4MB) và dựng Knowledge Base
 python -m src.squad.build_data
 ```
+## Schema các file
+
+### kb.jsonl — Knowledge Base
+Mỗi dòng là một đoạn văn Wikipedia:
+| Trường | Kiểu | Mô tả |
+|--------|------|-------|
+| `pid` | string | ID đoạn văn (SHA1) |
+| `title` | string | Tên bài Wikipedia |
+| `context` | string | Nội dung đoạn văn |
+
+### questions_dev.jsonl & questions_test.jsonl
+Mỗi dòng là một câu hỏi:
+| Trường | Kiểu | Mô tả |
+|--------|------|-------|
+| `qid` | string | ID câu hỏi gốc từ SQuAD |
+| `split` | string | `"dev"` hoặc `"test"` |
+| `title` | string | Bài Wikipedia liên quan |
+| `question` | string | Câu hỏi |
+| `answers` | list[string] | Đáp án đúng (rỗng nếu không trả lời được) |
+| `is_impossible` | bool | `true` = câu hỏi bẫy, model không được bịa |
+
+### stats.json
+Thống kê tổng quan sau khi build:
+| Trường | Mô tả |
+|--------|-------|
+| `seed` | Random seed (42) |
+| `kb_paragraphs` | Tổng số đoạn trong KB |
+| `splits.dev.articles` | Danh sách bài dùng cho dev |
+| `splits.dev.paragraphs` | Số đoạn dev |
+| `splits.dev.questions` | Tổng câu hỏi dev |
+| `splits.dev.answerable` | Câu có đáp án |
+| `splits.dev.unanswerable` | Câu không trả lời được |
+| `splits.test.*` | Tương tự cho test set |
+
 
 ## Chạy pipeline tiếp theo
 
