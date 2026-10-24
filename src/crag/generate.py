@@ -29,6 +29,16 @@ from pathlib import Path
 
 import ollama
 
+from src.crag.abstain import decide_after, decide_before
+from src.crag.context import (
+    CHUNK_CONFIGS,
+    CITE_CONFIGS,
+    PAGE_CONFIGS,
+    RAG_CONFIGS,
+    Budget,
+    build_context,
+)
+
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "data" / "crag_public_test" / "questions.jsonl"
 OUT_DIR = ROOT / "results" / "crag"
@@ -85,87 +95,8 @@ Please follow these guidelines when formulating your answer:
 ### Answer
 """
 
-# Bài dùng cửa sổ 4K token cho họ Llama 3 Instruct và GPT-4 Turbo
-REF_TOKEN_BUDGET = 4000
-# Bậc dùng tài liệu; B0 là bậc duy nhất không dùng
-RAG_CONFIGS = ("B1", "B1.1", "B1.2", "B2", "B3", "B4", "B5")
-# B1.1 chỉ là tên khác của B1; B1.2 dùng dữ liệu 50 trang
-PAGE_CONFIGS = ("B1", "B1.1", "B1.2")
 DATA_TASK3 = ROOT / "data" / "crag_task3_public_test" / "questions.jsonl"
-# Bậc đọc file truy hồi thay vì nối thẳng cả trang
-CHUNK_CONFIGS = ("B2", "B3", "B4", "B5")
-# Bậc đánh số tài liệu và bắt trích dẫn
-CITE_CONFIGS = ("B4", "B5")
 _CITATION = re.compile(r"\s*\[\s*\d+(?:\s*,\s*\d+)*\s*\]")
-# Bản sao tokenizer Llama 3 không bị khoá tải (trọng số gốc của Meta cần xin quyền)
-TOKENIZER_REPO = "unsloth/llama-3-8b-Instruct"
-
-
-class Budget:
-    """Cắt phần tài liệu tham chiếu theo đúng số token, như bài mô tả."""
-
-    def __init__(self, repo: str = TOKENIZER_REPO) -> None:
-        from transformers import AutoTokenizer  # nhập tại chỗ: chỉ B1 mới cần
-
-        self.tok = AutoTokenizer.from_pretrained(repo)
-
-    def clip(self, text: str, budget: int) -> tuple[str, int]:
-        ids = self.tok(text, add_special_tokens=False)["input_ids"]
-        if len(ids) <= budget:
-            return text, len(ids)
-        return self.tok.decode(ids[:budget]), budget
-
-
-def build_references(item: dict, budget: Budget, source: str) -> tuple[str, int]:
-    """Nối các trang theo THỨ TỰ GỐC cho tới khi đầy cửa sổ token.
-
-    ``source='text'``: dùng nội dung trang đã tách khỏi HTML.
-    ``source='snippet'``: dùng đoạn tóm tắt ngắn mà công cụ tìm kiếm trả về.
-    Bài viết "webpage snippets" nên hai cách đều có thể là cách bài đã dùng — chạy cả hai
-    rồi xem cách nào ra gần Bảng 5 hơn (xem docs/crag_quy_trinh_danh_gia.md §1).
-    """
-    parts, used = [], 0
-    for page in item["pages"]:
-        raw = page["text"] if source == "text" else page["page_snippet"]
-        if not raw.strip():
-            continue
-        clipped, n = budget.clip(raw, REF_TOKEN_BUDGET - used)
-        if n == 0:
-            break
-        parts.append(f"- {clipped.strip()}")
-        used += n
-        if used >= REF_TOKEN_BUDGET:
-            break
-    return "\n".join(parts), used
-
-
-def build_from_chunks(
-    chunks: list[dict], budget: Budget, config: str, keep_threshold: float
-) -> tuple[str, int, int]:
-    """Lấp ngân sách bằng các đoạn đã xếp hạng lại, tốt nhất trước.
-
-    Trả về (chuỗi tài liệu, số token đã dùng, số đoạn đã dùng). B3 trở lên bỏ những
-    đoạn có điểm dưới ngưỡng — đây chính là cơ chế được kỳ vọng kéo tỷ lệ bịa xuống,
-    và nó CÓ THỂ trả về chuỗi rỗng khi không đoạn nào đủ điểm.
-    """
-    if config == "B2":
-        ranked = sorted(chunks, key=lambda c: -c["rrf"])
-    else:
-        ranked = [
-            c for c in sorted(chunks, key=lambda c: -c["rerank"]) if c["rerank"] >= keep_threshold
-        ]
-
-    parts, used = [], 0
-    for c in ranked:
-        clipped, n = budget.clip(c["text"], REF_TOKEN_BUDGET - used)
-        if n == 0:
-            break
-        label = f"[{len(parts) + 1}] " if config in CITE_CONFIGS else "- "
-        parts.append(label + clipped.strip())
-        used += n
-        if used >= REF_TOKEN_BUDGET:
-            break
-    return "\n".join(parts), used, len(parts)
 
 
 def main() -> None:
@@ -210,6 +141,13 @@ def main() -> None:
         help="B5: đoạn tốt nhất dưới ngưỡng này thì từ chối, không gọi model",
     )
     parser.add_argument(
+        "--data",
+        type=Path,
+        default=None,
+        help="file câu hỏi khác mặc định, vd. data/crag_canary/questions.jsonl; "
+        "tên thư mục chứa nó được gắn vào tên file đầu ra",
+    )
+    parser.add_argument(
         "--retrieval", type=Path, default=ROOT / "data" / "crag_public_test" / "retrieval.jsonl"
     )
     parser.add_argument(
@@ -220,7 +158,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    data_file = DATA_TASK3 if args.config == "B1.2" else DATA
+    data_file = args.data or (DATA_TASK3 if args.config == "B1.2" else DATA)
     if not data_file.exists():
         raise SystemExit(f"thiếu {data_file} — chạy bước nạp tương ứng trước")
     # bản nạp task 3 mặc định chỉ giữ snippet, không có chữ tách từ HTML
@@ -232,6 +170,8 @@ def main() -> None:
     items = [json.loads(line) for line in data_file.open(encoding="utf-8")]
     if args.limit:
         items = items[: args.limit]
+    if args.config in PAGE_CONFIGS and items and "pages" not in items[0]:
+        raise SystemExit(f"{data_file} không có trang gốc (vd. bộ canary) — chỉ chạy B0, B2–B5")
 
     budget = Budget() if args.config in RAG_CONFIGS else None
     retrieval = {}
@@ -266,6 +206,8 @@ def main() -> None:
         variant += "_raw"
     if args.num_predict != 50:
         variant += f"_p{args.num_predict}"
+    if args.data and args.data.parent.name != DATA.parent.name:
+        variant += f"_{args.data.parent.name}"
     out_file = OUT_DIR / f"gen_{args.config}_{tag}_{ref_tag}_seed{args.seed}{variant}.jsonl"
 
     done = set()
@@ -282,27 +224,18 @@ def main() -> None:
         for i, item in enumerate(items, 1):
             if item["interaction_id"] in done:
                 continue
-            n_used, gated, best = 0, False, None
+            ctx = build_context(
+                item, args.config, budget, retrieval, args.ref_source, args.keep_threshold
+            )
             if args.config == "B0":
                 prompt = PROMPT_B0.format(query=item["query"], query_time=item["query_time"])
-                n_ref = 0
-            elif args.config in PAGE_CONFIGS:
-                refs, n_ref = build_references(item, budget, args.ref_source)
-                prompt = PROMPT_B1.format(
-                    query=item["query"], query_time=item["query_time"], references=refs
-                )
             else:
-                chunks = retrieval.get(item["interaction_id"], [])
-                best = max((c["rerank"] for c in chunks), default=-1.0)
-                refs, n_ref, n_used = build_from_chunks(
-                    chunks, budget, args.config, args.keep_threshold
-                )
                 template = PROMPT_B4 if args.config in CITE_CONFIGS else PROMPT_B1
                 prompt = template.format(
-                    query=item["query"], query_time=item["query_time"], references=refs
+                    query=item["query"], query_time=item["query_time"], references=ctx["refs"]
                 )
-                # B5: tài liệu quá yếu thì từ chối luôn, khỏi tốn một lượt sinh
-                gated = args.config == "B5" and best < args.gate_threshold
+            n_ref, n_used, best = ctx["n_ref"], ctx["n_used"], ctx["best"]
+            gated = decide_before(args.config, ctx, args.gate_threshold)
 
             t0 = time.time()
             if gated:
@@ -311,6 +244,9 @@ def main() -> None:
                 resp = client.generate(
                     model=args.model, prompt=prompt, options=options, raw=args.raw
                 )
+                if decide_after(args.config, ctx, resp["response"]):
+                    resp = {**resp, "response": "I don't know"}
+                    gated = True
             raw = resp["response"].strip()
             pred = _CITATION.sub("", raw).strip() if args.config in CITE_CONFIGS else raw
             sink.write(
@@ -323,6 +259,7 @@ def main() -> None:
                         "domain": item["domain"],
                         "question_type": item["question_type"],
                         "static_or_dynamic": item["static_or_dynamic"],
+                        **({"canary_type": item["canary_type"]} if "canary_type" in item else {}),
                         "prediction": pred,
                         "prediction_raw": raw,
                         "n_ref_tokens": n_ref,
