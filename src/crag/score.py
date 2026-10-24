@@ -10,13 +10,16 @@ Hai chế độ, chạy trên cùng một file sinh:
 
     python -m src.crag.score --gen results/crag/gen_B0_....jsonl --mode crag --judge gemma4:31b
 
+Câu canary loại ``fictional`` (hỏi về thứ không tồn tại, xem ``src.crag.make_canary``)
+không có đáp án chuẩn để so: từ chối hoặc nói "invalid question" là đúng, trả lời gì
+khác đều là bịa. Nhánh này không gọi giám khảo và giống nhau ở cả hai chế độ.
+
 Đầu ra: <gen>.scored_<mode>.jsonl (từng câu) và một dòng tổng hợp trong results/crag/runs.jsonl
 """
 
 from __future__ import annotations
 
 import argparse
-import collections
 import json
 import re
 import string
@@ -24,6 +27,8 @@ import time
 from pathlib import Path
 
 import ollama
+
+from src.evaluation import three_label_report
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNS = ROOT / "results" / "crag" / "runs.jsonl"
@@ -82,6 +87,13 @@ def trim_75(text: str, tok) -> str:
     return tok.decode(ids[:75]) if len(ids) > 75 else text
 
 
+_REFUSAL = ("i don't know", "i do not know", "invalid question")
+
+
+def is_refusal(pred: str) -> bool:
+    return any(phrase in pred.lower() for phrase in _REFUSAL)
+
+
 def ask_judge(client, model: str, prompt: str, field: str, allowed: set[str]) -> str | None:
     """Gọi giám khảo, đọc JSON trả về. Không đọc được thì trả None (ghi riêng, không tính là sai)."""
     resp = client.generate(
@@ -133,7 +145,10 @@ def main() -> None:
             truths = [str(row["answer"])] + [str(a) for a in row.get("alt_ans", []) if a != ""]
             label, how = None, ""
 
-            if args.mode == "crag":
+            if row.get("canary_type") == "fictional":
+                label = ACCURATE if is_refusal(pred) else HALLUCINATED
+                how = "canary: thực thể bịa"
+            elif args.mode == "crag":
                 if "i don't know" in pred.lower():
                     label, how = MISSING, "chuỗi cố định"
                 elif any(norm(pred) == norm(t) for t in truths):
@@ -179,19 +194,17 @@ def main() -> None:
                 print(f"{i}/{len(rows)} · {(time.time() - started) / i:.1f} s/câu", flush=True)
 
     labels = [json.loads(line)["label"] for line in out_file.open(encoding="utf-8")]
-    n = len(labels)
-    count = collections.Counter(labels)
-    acc, hall, miss = count[ACCURATE] / n, count[HALLUCINATED] / n, count[MISSING] / n
+    rep = three_label_report(labels)
     summary = {
         "gen_file": str(args.gen.resolve().relative_to(ROOT)),
         "mode": args.mode,
         "judge": args.judge,
-        "n": n,
-        "accuracy": round(100 * acc, 1),
-        "hallucination": round(100 * hall, 1),
-        "missing": round(100 * miss, 1),
-        "truthfulness": round(100 * (acc - hall), 1),
-        "unparsed": count[UNPARSED],
+        "n": rep["n"],
+        "accuracy": round(rep["accuracy"], 1),
+        "hallucination": round(rep["hallucination"], 1),
+        "missing": round(rep["missing"], 1),
+        "truthfulness": round(rep["truthfulness"], 1),
+        "unparsed": rep["counts"][UNPARSED],
         "n_judge_calls": n_judge_calls,
         "scored_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }

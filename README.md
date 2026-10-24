@@ -149,8 +149,21 @@ python -m src.crag.generate --config B4 --model llama3:8b-instruct-fp16 \
 python -m src.crag.score --gen results/crag/gen_B4_*.jsonl --mode crag  --judge gemma3:27b
 python -m src.crag.score --gen results/crag/gen_B4_*.jsonl --mode three --judge gemma3:27b
 
-# 5. tổng hợp thành results/crag/metrics.json
+# 5. tổng hợp thành results/crag/metrics.json — kèm điểm phạt +1/−4/0, tách theo
+#    static/dynamic, đường risk–coverage của cổng B5 (mô phỏng trên nhãn B4, không gọi model)
 python -m src.crag.report
+```
+
+Bộ canary — câu mà hành vi đúng là không trả lời theo tài liệu:
+
+```bash
+# no_evidence: câu thật, bỏ mọi đoạn chứa đáp án · fictional: hỏi về thực thể bịa
+python -m src.crag.make_canary            # → data/crag_canary/
+python -m src.crag.generate --config B5 --num-predict 75 --keep-threshold 0.05 \
+    --gate-threshold 0.05 --data data/crag_canary/questions.jsonl \
+    --retrieval data/crag_canary/retrieval.jsonl     # file đầu ra có đuôi _crag_canary
+python -m src.crag.score --gen results/crag/gen_B5_*_crag_canary.jsonl --mode crag
+python -m src.crag.report                 # mục "canary" trong metrics.json
 ```
 
 Chạy cả bậc thang một lượt: `scripts/run_all_p75.sh` (sáu bậc đầu) và `scripts/run_b45.sh`
@@ -166,10 +179,13 @@ src/crag/
   ingest_task3.py  bản 50 trang, lọc theo interaction_id của task 1&2
   retrieve.py      chia đoạn 220 từ · BM25 tự cài · bge-m3 · RRF(k=60) · cross-encoder
   calibrate.py     chọn ngưỡng bằng cách đo đáp án có nằm trong đoạn không
+  context.py       khâu dựng ngữ cảnh: chọn trang/đoạn, cắt theo ngân sách 4.000 token
+  abstain.py       khâu từ chối: cổng trước khi sinh (B5) và chỗ cắm chính sách sau khi sinh
   generate.py      tám cấu hình B0–B5, prompt nguyên văn Phụ lục A.3.1
-  score.py         hai bộ chấm độc lập: kiểu bài (nhị phân) và đối chứng ba nhãn
+  score.py         hai bộ chấm độc lập: kiểu bài (nhị phân) và đối chứng ba nhãn; nhánh canary
+  make_canary.py   bộ câu canary no_evidence / fictional
   report.py        chạy cả bậc thang → metrics.json
-src/evaluation.py  gộp nhãn thành chỉ số: accurate/hallucinated/missing/truthfulness
+src/evaluation.py  gộp nhãn thành chỉ số: truthfulness, điểm có penalty, tách nhóm, risk–coverage
 tests/             pytest — chạy bằng `make test`
 scripts/           driver chạy cả bậc thang, tải dữ liệu, soi dữ liệu
 ```
