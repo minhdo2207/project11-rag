@@ -6,7 +6,13 @@ import json
 
 import pytest
 
-from src.evaluation import report_from_file, three_label_report
+from src.evaluation import (
+    answer_threshold,
+    breakdown,
+    report_from_file,
+    risk_coverage,
+    three_label_report,
+)
 
 
 def test_tinh_dung_ba_ty_le_va_truthfulness():
@@ -67,3 +73,59 @@ def test_dong_thieu_truong_label_thi_bao_loi(tmp_path):
     path.write_text(json.dumps({"interaction_id": "a"}) + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="thiếu trường"):
         report_from_file(path)
+
+
+def test_penalty_1_cho_ra_dung_truthfulness_cu():
+    labels = ["accurate"] * 5 + ["hallucinated"] * 3 + ["missing"] * 2
+    r = three_label_report(labels)
+    assert r["score"] == r["truthfulness"] == 20.0
+
+
+def test_penalty_4_phat_bia_nang_gap_bon():
+    labels = ["accurate"] * 5 + ["hallucinated"] * 3 + ["missing"] * 2
+    r = three_label_report(labels, penalty=4)
+    assert r["score"] == pytest.approx(50 - 4 * 30)
+    assert r["truthfulness"] == 20.0  # không đổi theo penalty
+
+
+def test_nguong_tra_loi_theo_penalty():
+    assert answer_threshold(1) == 0.5
+    assert answer_threshold(4) == pytest.approx(0.8)
+
+
+def test_tach_nhom_theo_truong():
+    rows = [
+        {"label": "accurate", "static_or_dynamic": "static"},
+        {"label": "hallucinated", "static_or_dynamic": "static"},
+        {"label": "hallucinated", "static_or_dynamic": "real-time"},
+    ]
+    r = breakdown(rows, "static_or_dynamic")
+    assert r["static"]["n"] == 2 and r["static"]["truthfulness"] == 0.0
+    assert r["real-time"]["truthfulness"] == -100.0
+
+
+def test_risk_coverage_chan_cau_duoi_nguong():
+    rows = [
+        {"label": "accurate", "best_rerank": 0.9},
+        {"label": "hallucinated", "best_rerank": 0.1},
+        {"label": "hallucinated", "best_rerank": 0.8},
+        {"label": "missing", "best_rerank": 0.95},  # model tự từ chối
+    ]
+    pts = risk_coverage(rows, thresholds=[0.0, 0.5])
+    no_gate, gate = pts
+    assert no_gate["coverage"] == 75.0  # 3/4 câu có trả lời
+    assert no_gate["risk"] == pytest.approx(200 / 3)
+    assert gate["coverage"] == 50.0  # câu 0,1 bị chặn
+    assert gate["risk"] == 50.0
+    assert gate["score_p1"] == 0.0
+    assert gate["score_p4"] == pytest.approx(25 - 4 * 25)
+
+
+def test_risk_coverage_diem_dau_la_khong_chan():
+    rows = [
+        {"label": "hallucinated", "best_rerank": -0.5},
+        {"label": "accurate", "best_rerank": 0.3},
+    ]
+    pts = risk_coverage(rows)
+    assert pts[0]["coverage"] == 100.0
+    assert pts[-1]["coverage"] == 50.0  # ngưỡng cuối = điểm cao nhất, chỉ câu đó qua
