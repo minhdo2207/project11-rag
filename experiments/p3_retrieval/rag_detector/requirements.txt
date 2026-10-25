@@ -1,0 +1,2 @@
+# Detector hallucination LettuceDetect, cài từ PyPI (kéo theo torch, transformers, scikit-learn, ...)
+lettucedetect>=0.2.3
