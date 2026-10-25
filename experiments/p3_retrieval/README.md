@@ -18,6 +18,14 @@ in [`bao-cao-7-kich-ban.pdf`](bao-cao-7-kich-ban.pdf) (Vietnamese).
 | S6 | adaptive-k, MMR, U-shaped ordering | `s6/run_s6.py` |
 | S7 | calibration and 4-level answer decision (`may_assert`) | `s7/run_s7.py` |
 
+## Hallucination detector step (`rag_detector/`)
+
+[`rag_detector/`](rag_detector/README.md) runs LettuceDetect over the generated answers of S1–S7
+and reports accuracy, hallucination rate, rejection rate and adjusted accuracy per scenario and
+per threshold. It needs `pip install lettucedetect` and one JSONL of generations per scenario.
+Nothing in this folder produces those generations yet, and the step has not been run with the
+real model (see its README for the limits).
+
 ## Running
 
 ```bash
