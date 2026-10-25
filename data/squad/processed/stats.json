@@ -1,0 +1,40 @@
+{
+  "seed": 42,
+  "kb_paragraphs": 350,
+  "splits": {
+    "dev": {
+      "articles": [
+        "Economic_inequality",
+        "Amazon_rainforest",
+        "Intergovernmental_Panel_on_Climate_Change"
+      ],
+      "paragraphs": 89,
+      "questions": 1021,
+      "answerable": 584,
+      "unanswerable": 437
+    },
+    "test": {
+      "articles": [
+        "Immune_system",
+        "Yuan_dynasty",
+        "Computational_complexity_theory",
+        "Pharmacy",
+        "Civil_disobedience",
+        "Oxygen",
+        "Sky_(United_Kingdom)"
+      ],
+      "paragraphs": 261,
+      "questions": 2517,
+      "answerable": 1314,
+      "unanswerable": 1203
+    }
+  },
+  "words_per_paragraph": {
+    "mean": 123.0,
+    "median": 112,
+    "max": 356
+  },
+  "total_questions": 3538,
+  "total_answerable": 1898,
+  "total_unanswerable": 1640
+}
