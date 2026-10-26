@@ -9,6 +9,7 @@ from src.squad.generate import IDK, build_messages
 from src.squad.guardrail_scores import content_tokens, lexical_score
 from src.squad.judge import build_user_message, parse_verdict
 from src.squad.label import f1, is_abstain, judge_tag, label, norm, summarize
+from src.squad.p5_report import auroc, gate, over_refusal, tune_flag_tau, tune_for_penalty
 from src.squad.retrieve import rank_metrics, rrf_fuse
 
 # ---------- build_data ----------
@@ -262,3 +263,37 @@ def test_tune_full_va_compare():
     assert c["hal_added"] == 0  # guardrail chỉ chặn, không tạo thêm câu bịa
     assert c["hal_removed"] == int(d["hal"].sum() - after[1].sum())
     assert c["d_truthfulness"] >= 0
+
+
+# ---------- p5_report ----------
+
+
+def test_gate_blocks_to_missing():
+    assert gate(["accurate", "hallucination", "missing"], [True, False, True]) == [
+        "missing",
+        "hallucination",
+        "missing",
+    ]
+
+
+def test_over_refusal_counts_only_answerable():
+    labels = ["missing", "accurate", "missing", "hallucination"]
+    assert over_refusal(labels, [True, True, False, False]) == 0.5
+
+
+def test_auroc_perfect_and_tied():
+    assert auroc([0.9, 0.8], [0.1, 0.2]) == 1.0
+    assert auroc([0.5], [0.5]) == 0.5
+
+
+def test_tune_flag_tau_respects_budget():
+    # câu 0 đúng nhưng bị gắn cờ mạnh: chặn nó là từ chối nhầm, vượt trần 0 → chỉ chặn câu bịa
+    labels = ["accurate", "hallucination", "accurate"]
+    tau = tune_flag_tau(labels, [True, False, True], [0.6, 0.9, 0.0], budget=0.0)
+    assert 0.6 < tau <= 0.9
+
+
+def test_tune_for_penalty_blocks_low_scores():
+    labels = ["hallucination", "accurate", "accurate"]
+    t = tune_for_penalty(labels, [0.1, 0.8, 0.9])
+    assert 0.1 < t <= 0.8
