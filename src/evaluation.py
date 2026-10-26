@@ -35,15 +35,19 @@ LABELS = (ACCURATE, HALLUCINATED, MISSING, UNPARSED)
 ALIASES = {"hallucination": HALLUCINATED}
 
 
-def three_label_report(labels: list[str]) -> dict:
+def three_label_report(labels: list[str], penalty: float = 1.0) -> dict:
     """Ba nhãn gốc của CRAG, đơn vị phần trăm.
 
     Args:
         labels: nhãn của từng câu, mỗi phần tử thuộc ``LABELS`` (hoặc tên khác trong
             ``ALIASES``).
+        penalty: số điểm bị trừ cho một câu bịa. CRAG dùng 1; luật +1/−4/0 của
+            why-rags-hallucinate dùng 4. Chỉ ảnh hưởng ``score``, không ảnh hưởng
+            ``truthfulness`` — để số cũ vẫn so được.
 
     Returns:
-        dict gồm ``n``, ba tỷ lệ, ``truthfulness``, và ``counts`` đếm thô.
+        dict gồm ``n``, ba tỷ lệ, ``truthfulness`` (= acc − hall), ``score``
+        (= acc − penalty·hall), ``penalty`` và ``counts`` đếm thô.
         ``unparsed`` được tính điểm như ``missing`` (đều 0 điểm) nhưng vẫn đếm
         riêng trong ``counts`` để biết bộ chấm hỏng bao nhiêu câu.
 
@@ -68,8 +72,76 @@ def three_label_report(labels: list[str]) -> dict:
         "hallucination": 100 * hal,
         "missing": 100 * mis,
         "truthfulness": 100 * (acc - hal),
+        "score": 100 * (acc - penalty * hal),
+        "penalty": penalty,
         "counts": {label: count[label] for label in LABELS},
     }
+
+
+def answer_threshold(penalty: float) -> float:
+    """Ngưỡng xác suất đúng tối thiểu để trả lời có lợi hơn từ chối.
+
+    Trả lời: kỳ vọng p·1 − (1 − p)·penalty. Từ chối: 0. Hoà khi p = penalty / (1 + penalty).
+    CRAG (penalty 1) → 0,5; luật +1/−4/0 → 0,8.
+    """
+    return penalty / (1 + penalty)
+
+
+def breakdown(rows: list[dict], key: str, penalty: float = 1.0) -> dict:
+    """Tách chỉ số theo một trường của câu hỏi, vd. ``static_or_dynamic`` hay ``domain``."""
+    groups: dict[str, list[str]] = {}
+    for row in rows:
+        groups.setdefault(str(row.get(key)), []).append(row["label"])
+    return {g: three_label_report(labels, penalty) for g, labels in sorted(groups.items())}
+
+
+def risk_coverage(
+    rows: list[dict],
+    score_key: str = "best_rerank",
+    thresholds: list[float] | None = None,
+    penalties: tuple[float, ...] = (1.0, 4.0),
+) -> list[dict]:
+    """Mô phỏng một cổng từ chối trên file ĐÃ CHẤM, không cần gọi lại model.
+
+    Câu có ``score_key`` dưới ngưỡng bị coi như từ chối (nhãn ``missing``); câu còn lại
+    giữ nguyên nhãn. Chạy trên file B4 thì mỗi ngưỡng chính là một bản B5 — B5 chỉ khác
+    B4 ở cổng này (cùng prompt, cùng đoạn, cùng seed).
+
+    Returns:
+        mỗi ngưỡng một dict: ``threshold``, ``coverage`` (% câu thực sự trả lời),
+        ``risk`` (% bịa trong số câu đã trả lời), ``accuracy``, ``hallucination`` và
+        ``score_p<penalty>`` cho từng penalty.
+    """
+    if not rows:
+        raise ValueError("danh sách câu rỗng")
+    if thresholds is None:
+        values = sorted({float(r[score_key]) for r in rows if r.get(score_key) is not None})
+        thresholds = [values[0] - 1.0] + values  # điểm đầu = không chặn câu nào
+    points = []
+    for tau in thresholds:
+        labels = [
+            MISSING if r.get(score_key) is not None and float(r[score_key]) < tau else r["label"]
+            for r in rows
+        ]
+        rep = three_label_report(labels)
+        answered = rep["counts"][ACCURATE] + rep["counts"][HALLUCINATED]
+        point = {
+            "threshold": tau,
+            "coverage": 100 * answered / rep["n"],
+            "risk": 100 * rep["counts"][HALLUCINATED] / answered if answered else 0.0,
+            "accuracy": rep["accuracy"],
+            "hallucination": rep["hallucination"],
+        }
+        for p in penalties:
+            point[f"score_p{p:g}"] = rep["accuracy"] - p * rep["hallucination"]
+        points.append(point)
+    return points
+
+
+def load_scored(path: str | Path) -> list[dict]:
+    """Đọc nguyên các dòng của file ``.scored_*.jsonl``, bỏ dòng trống."""
+    with Path(path).open(encoding="utf-8") as fh:
+        return [json.loads(line) for line in fh if line.strip()]
 
 
 def report_from_file(path: str | Path) -> dict:
