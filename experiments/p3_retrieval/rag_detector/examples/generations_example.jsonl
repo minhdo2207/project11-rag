@@ -1,0 +1,3 @@
+{"id": "q1", "question": "What is the capital of France? What is the population of France?", "contexts": ["France is a country in Europe. The capital of France is Paris. The population of France is 67 million."], "answer": "The capital of France is Paris. The population of France is 69 million.", "correct": false}
+{"id": "q2", "question": "What is the capital of France?", "contexts": ["France is a country in Europe. The capital of France is Paris."], "answer": "The capital of France is Paris.", "correct": true}
+{"id": "q3", "question": "Who is the president of France?", "contexts": ["France is a country in Europe. The capital of France is Paris."], "answer": "", "decision": "abstain"}
